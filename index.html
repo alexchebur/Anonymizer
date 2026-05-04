@@ -33,12 +33,10 @@
         
         statusDiv.textContent = '⏳ Загружаем модель...';
         
-        // Используем лучшую русскоязычную NER-модель
+        // Используем русскоязычную NER-модель
         const nerPipeline = await pipeline(
             'token-classification', 
-            'onnx-community/bert-base-NER-Russian-ONNX',
-            // Опционально: можно указать провайдер для ускорения, например 'webgpu'
-            // { device: 'webgpu' } 
+            'Dariel/bert-base-NER-Russian-cased',
         );
         
         statusDiv.textContent = '✅ Модель готова. Можно вводить текст.';
@@ -47,7 +45,10 @@
         // --- ЭТАП 2: Логика анонимизации ---
         button.addEventListener('click', async () => {
             const inputText = document.getElementById('inputText').value;
-            if (!inputText.trim()) return;
+            if (!inputText.trim()) {
+                statusDiv.textContent = '⚠️ Введите текст для анонимизации.';
+                return;
+            }
 
             // Визуальная обратная связь
             button.disabled = true;
@@ -74,7 +75,7 @@
         /**
          * Вспомогательная функция для замены найденных сущностей на маски.
          * Модель разбивает слова на подслова. Эта функция собирает их обратно
-         * в цельные сущности, например: ["B-PER", "I-PER"] -> "[FULL_NAME]".
+         * в цельные сущности, например: ["B-PER", "I-PER"] -> "[ФИО]".
          */
         function maskEntities(text, entities) {
             if (!entities || entities.length === 0) return text;
@@ -82,13 +83,14 @@
             // 1. Группируем подслова одной сущности в блоки
             const entityBlocks = [];
             let currentBlock = null;
-            const ignoredPrefixes = ['I-', 'B-', 'L-', 'U-'];
 
-            for (const ent of entities) {
-                // Определяем тип сущности, убирая префикс
-                const entityType = ent.entity.slice(2); 
+            for (let i = 0; i < entities.length; i++) {
+                const ent = entities[i];
+                // Определяем тип сущности, убирая префикс BIO
+                const bioTag = ent.entity.split('-')[0]; // B, I, O
+                const entityType = ent.entity.split('-').slice(1).join('-'); // PER, LOC, etc.
                 
-                if (ent.entity.startsWith('B-') || ent.entity.startsWith('U-')) {
+                if (bioTag === 'B' || bioTag === 'U') {
                     // Начало новой сущности
                     if (currentBlock) {
                         entityBlocks.push(currentBlock);
@@ -99,18 +101,26 @@
                         type: entityType,
                         score: ent.score
                     };
-                } else if (currentBlock && ent.entity.startsWith('I-')) {
+                } else if (bioTag === 'I' && currentBlock) {
                     // Продолжение текущей сущности
                     currentBlock.end = ent.end;
-                    currentBlock.score = Math.min(currentBlock.score, ent.score); // Берем худшую оценку для надежности
-                } else if (currentBlock && ent.entity.startsWith('L-')) {
+                    // Обновляем score - берем среднее или минимальное значение
+                    currentBlock.score = Math.min(currentBlock.score, ent.score);
+                } else if (bioTag === 'L' && currentBlock) {
                     // Конец сущности
                     currentBlock.end = ent.end;
                     currentBlock.score = Math.min(currentBlock.score, ent.score);
                     entityBlocks.push(currentBlock);
                     currentBlock = null;
+                } else if (bioTag === 'O') {
+                    // Вне сущности - если был блок, завершаем его
+                    if (currentBlock) {
+                        entityBlocks.push(currentBlock);
+                        currentBlock = null;
+                    }
                 }
             }
+            
             // Добавляем последний блок, если он есть
             if (currentBlock) {
                 entityBlocks.push(currentBlock);
@@ -123,7 +133,7 @@
             let result = text;
             for (const block of entityBlocks) {
                 // Пропускаем блоки с низкой уверенностью (опционально)
-                // if (block.score < 0.8) continue;
+                // if (block.score < 0.5) continue;
                 
                 const before = result.substring(0, block.start);
                 const after = result.substring(block.end);
@@ -150,6 +160,9 @@
                 'STREET': 'УЛИЦА',
                 'HOUSE': 'ДОМ',
                 'ORG': 'ОРГАНИЗАЦИЯ',
+                'PERSON': 'ФИЗ_ЛИЦО',
+                'ORGANIZATION': 'ОРГАНИЗАЦИЯ',
+                'GPE': 'ЛОКАЦИЯ',
             };
             return typeMap[type] || type;
         }
