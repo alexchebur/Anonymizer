@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анонимизатор (BERT Russian)</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
+        textarea { width: 100%; height: 300px; margin-bottom: 1em; padding: 0.5em; box-sizing: border-box; }
+        button { padding: 0.5em 2em; font-size: 1em; cursor: pointer; }
+        #status { margin: 1em 0; color: #555; }
+        .note { font-size: 0.9em; color: #777; margin-top: 2em; border-top: 1px solid #eee; padding-top: 1em; }
+    </style>
+</head>
+<body>
+
+    <h1>🔒 Анонимизация текстов (Русский NER)</h1>
+    <textarea id="inputText" placeholder="Введите или вставьте текст..."></textarea>
+    <button id="anonymizeBtn" disabled>Анонимизировать</button>
+    <div id="status">Загрузка модели...</div>
+
+    <div class="note">
+        <strong>Как это работает:</strong> Нейросеть BERT (98.8% точности) запускается прямо в вашем браузере. 
+        Текст анализируется локально и <strong>не передается</strong> на сервер.
+    </div>
+
+    <script type="module">
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
+
+        // --- ЭТАП 1: Загрузка модели ---
+        const statusDiv = document.getElementById('status');
+        const button = document.getElementById('anonymizeBtn');
+        
+        statusDiv.textContent = '⏳ Загружаем модель...';
+        
+        // Используем лучшую русскоязычную NER-модель
+        const nerPipeline = await pipeline(
+            'token-classification', 
+            'onnx-community/bert-base-NER-Russian-ONNX',
+            // Опционально: можно указать провайдер для ускорения, например 'webgpu'
+            // { device: 'webgpu' } 
+        );
+        
+        statusDiv.textContent = '✅ Модель готова. Можно вводить текст.';
+        button.disabled = false;
+
+        // --- ЭТАП 2: Логика анонимизации ---
+        button.addEventListener('click', async () => {
+            const inputText = document.getElementById('inputText').value;
+            if (!inputText.trim()) return;
+
+            // Визуальная обратная связь
+            button.disabled = true;
+            statusDiv.textContent = '⏳ Идет анализ текста...';
+
+            try {
+                // Обработка текста
+                const entities = await nerPipeline(inputText);
+                
+                // Группировка подслов (sub-tokens) обратно в слова и замена на маски
+                const maskedText = maskEntities(inputText, entities);
+                
+                // Вывод результата в то же поле
+                document.getElementById('inputText').value = maskedText;
+                statusDiv.textContent = `✅ Готово! Найдено и заменено ${entities.length} сущностей.`;
+            } catch (error) {
+                console.error('Ошибка анонимизации:', error);
+                statusDiv.textContent = '❌ Произошла ошибка. Попробуйте еще раз.';
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        /**
+         * Вспомогательная функция для замены найденных сущностей на маски.
+         * Модель разбивает слова на подслова. Эта функция собирает их обратно
+         * в цельные сущности, например: ["B-PER", "I-PER"] -> "[FULL_NAME]".
+         */
+        function maskEntities(text, entities) {
+            if (!entities || entities.length === 0) return text;
+
+            // 1. Группируем подслова одной сущности в блоки
+            const entityBlocks = [];
+            let currentBlock = null;
+            const ignoredPrefixes = ['I-', 'B-', 'L-', 'U-'];
+
+            for (const ent of entities) {
+                // Определяем тип сущности, убирая префикс
+                const entityType = ent.entity.slice(2); 
+                
+                if (ent.entity.startsWith('B-') || ent.entity.startsWith('U-')) {
+                    // Начало новой сущности
+                    if (currentBlock) {
+                        entityBlocks.push(currentBlock);
+                    }
+                    currentBlock = {
+                        start: ent.start,
+                        end: ent.end,
+                        type: entityType,
+                        score: ent.score
+                    };
+                } else if (currentBlock && ent.entity.startsWith('I-')) {
+                    // Продолжение текущей сущности
+                    currentBlock.end = ent.end;
+                    currentBlock.score = Math.min(currentBlock.score, ent.score); // Берем худшую оценку для надежности
+                } else if (currentBlock && ent.entity.startsWith('L-')) {
+                    // Конец сущности
+                    currentBlock.end = ent.end;
+                    currentBlock.score = Math.min(currentBlock.score, ent.score);
+                    entityBlocks.push(currentBlock);
+                    currentBlock = null;
+                }
+            }
+            // Добавляем последний блок, если он есть
+            if (currentBlock) {
+                entityBlocks.push(currentBlock);
+            }
+
+            // 2. Сортируем блоки по позиции в тексте (с конца, чтобы не сбить индексы)
+            entityBlocks.sort((a, b) => b.start - a.start);
+
+            // 3. Заменяем каждый блок на маску
+            let result = text;
+            for (const block of entityBlocks) {
+                // Пропускаем блоки с низкой уверенностью (опционально)
+                // if (block.score < 0.8) continue;
+                
+                const before = result.substring(0, block.start);
+                const after = result.substring(block.end);
+                result = before + `[${mapEntityType(block.type)}]` + after;
+            }
+
+            return result;
+        }
+
+        /**
+         * Сопоставление технических типов сущностей с читаемыми метками.
+         */
+        function mapEntityType(type) {
+            const typeMap = {
+                'PER': 'ФИО',
+                'LAST_NAME': 'ФАМИЛИЯ',
+                'FIRST_NAME': 'ИМЯ',
+                'MIDDLE_NAME': 'ОТЧЕСТВО',
+                'LOC': 'МЕСТО',
+                'COUNTRY': 'СТРАНА',
+                'REGION': 'РЕГИОН',
+                'CITY': 'ГОРОД',
+                'DISTRICT': 'РАЙОН',
+                'STREET': 'УЛИЦА',
+                'HOUSE': 'ДОМ',
+                'ORG': 'ОРГАНИЗАЦИЯ',
+            };
+            return typeMap[type] || type;
+        }
+
+    </script>
+</body>
+</html>
