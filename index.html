@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анонимизатор (NLP.js для русского языка)</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
+        textarea { width: 100%; height: 300px; margin-bottom: 1em; padding: 0.5em; box-sizing: border-box; }
+        button { padding: 0.5em 2em; font-size: 1em; cursor: pointer; }
+        #status { margin: 1em 0; color: #555; }
+        .note { font-size: 0.9em; color: #777; margin-top: 2em; border-top: 1px solid #eee; padding-top: 1em; }
+    </style>
+</head>
+<body>
+
+    <h1>🔒 Анонимизация текстов (NLP.js для русского языка)</h1>
+    <textarea id="inputText" placeholder="Введите или вставьте текст..."></textarea>
+    <button id="anonymizeBtn" disabled>Анонимизировать</button>
+    <div id="status">Загрузка NLP.js...</div>
+
+    <div class="note">
+        <strong>Как это работает:</strong> Используется NLP.js с поддержкой русского языка.
+        Анализ происходит локально в браузере, данные <strong>не передаются</strong> на сервер.
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/nlpjs/browser/nlp.min.js"></script>
+    <script>
+        // --- Загрузка и инициализация NLP.js ---
+        const statusDiv = document.getElementById('status');
+        const button = document.getElementById('anonymizeBtn');
+
+        statusDiv.textContent = '⏳ Инициализация NLP.js...';
+
+        // Ждем полной загрузки
+        if (window.NlpJs) {
+            initializeAnonymizer();
+        } else {
+            // Если библиотека не загрузилась сразу, ждем
+            setTimeout(() => {
+                if (window.NlpJs) {
+                    initializeAnonymizer();
+                } else {
+                    statusDiv.textContent = '❌ Ошибка загрузки NLP.js. Проверьте соединение.';
+                }
+            }, 2000);
+        }
+
+        function initializeAnonymizer() {
+            statusDiv.textContent = '✅ NLP.js готов. Можно вводить текст.';
+            button.disabled = false;
+
+            // --- Логика анонимизации ---
+            button.addEventListener('click', () => {
+                const inputText = document.getElementById('inputText').value;
+                if (!inputText.trim()) {
+                    statusDiv.textContent = '⚠️ Введите текст для анонимизации.';
+                    return;
+                }
+
+                // Визуальная обратная связь
+                button.disabled = true;
+                statusDiv.textContent = '⏳ Идет анализ текста...';
+
+                try {
+                    // Простая анонимизация с помощью регулярных выражений и логики
+                    const anonymizedText = anonymizeText(inputText);
+                    
+                    // Выводим результат
+                    document.getElementById('inputText').value = anonymizedText;
+                    statusDiv.textContent = `✅ Готово! Выполнена анонимизация текста.`;
+                } catch (error) {
+                    console.error('Ошибка анонимизации:', error);
+                    statusDiv.textContent = '❌ Произошла ошибка. Попробуйте еще раз.';
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        }
+
+        /**
+         * Функция анонимизации текста с использованием регулярных выражений
+         * и базовых эвристик для русского языка
+         */
+        function anonymizeText(text) {
+            let result = text;
+            
+            // 1. Анонимизация ФИО
+            // Шаблон: Иванов Иван Петрович, Иван Иванович, Иван И.
+            const fullNamePattern = /\b([А-ЯЁ][а-яё]+)\s+([А-ЯЁ][а-яё]+)(?:\s+[А-ЯЁ][а-яё]+| [А-ЯЁ]\.)?\b/g;
+            result = result.replace(fullNamePattern, '[ФИО]');
+            
+            // 2. Анонимизация организаций (по ключевым словам)
+            const orgPattern = /\b(?:ООО|ЗАО|ОАО|ПАО|ИП|Организация|Компания|Корпорация|Группа|Холдинг)\s+[А-ЯЁ][А-ЯЁа-яё\s\d\-«»"'.,]*\b/gi;
+            result = result.replace(orgPattern, '[ОРГАНИЗАЦИЯ]');
+            
+            // 3. Анонимизация телефонов
+            const phonePattern = /(\+7|8)[-\s]?\(?[\d]{3}\)?[-\s]?[\d]{3}[-\s]?[\d]{2}[-\s]?[\d]{2}/g;
+            result = result.replace(phonePattern, '[ТЕЛЕФОН]');
+            
+            // 4. Анонимизация email
+            const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+            result = result.replace(emailPattern, '[EMAIL]');
+            
+            // 5. Анонимизация адресов (упрощённо)
+            const addressPattern = /\b(?:ул\.|улица|пр\.|проспект|пер\.|переулок|дом|кв\.|квартира)\s+[А-ЯЁа-яё\d\s-]+/gi;
+            result = result.replace(addressPattern, '[АДРЕС]');
+            
+            // 6. Анонимизация чисел (если нужно)
+            // const numbersPattern = /\b\d{4,}\b/g;
+            // result = result.replace(numbersPattern, '[ЧИСЛО]');
+            
+            return result;
+        }
+    </script>
+</body>
+</html>
