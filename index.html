@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анонимизатор (YARGY для русского языка)</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
+        textarea { width: 100%; height: 300px; margin-bottom: 1em; padding: 0.5em; box-sizing: border-box; }
+        button { padding: 0.5em 2em; font-size: 1em; cursor: pointer; }
+        #status { margin: 1em 0; color: #555; }
+        .note { font-size: 0.9em; color: #777; margin-top: 2em; border-top: 1px solid #eee; padding-top: 1em; }
+    </style>
+</head>
+<body>
+
+    <h1>🔒 Анонимизация текстов (YARGY для русского языка)</h1>
+    <textarea id="inputText" placeholder="Введите или вставьте текст..."></textarea>
+    <button id="anonymizeBtn" disabled>Анонимизировать</button>
+    <div id="status">Загрузка YARGY...</div>
+
+    <div class="note">
+        <strong>Как это работает:</strong> Используется YARGY - библиотека для русского языка, работающая на основе грамматик.
+        Анализ происходит локально в браузере, данные <strong>не передаются</strong> на сервер.
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/yargy@3.0.2/dist/yargy.umd.min.js"></script>
+    <script>
+        // --- Загрузка и инициализация YARGY ---
+        const statusDiv = document.getElementById('status');
+        const button = document.getElementById('anonymizeBtn');
+
+        statusDiv.textContent = '⏳ Инициализация YARGY...';
+
+        // Определяем грамматики для разных типов сущностей
+        const { rule, and, or, not_, gram, dict, normalized } = yargy;
+
+        // Словари для различных категорий
+        const PERSON_NAMES = [
+            'иван', 'пётр', 'петр', 'николай', 'михаил', 'сергей', 'андрей', 'александр', 
+            'дмитрий', 'дмитрий', 'анна', 'мария', 'екатерина', 'ольга', 'татьяна', 'наталия',
+            'александра', 'светлана', 'юрий', 'виктор', 'василий', 'георгий', 'вячеслав',
+            'владимир', 'борис', 'фёдор', 'федор', 'алексей', 'игорь', 'роман', 'антон',
+            'максим', 'артём', 'артем', 'никита', 'илья', 'кирилл', 'виктория', 'дарья',
+            'марина', 'елена', 'людмила', 'раиса', 'валентина', 'инна', 'ксения', 'полина'
+        ];
+
+        const LAST_NAMES = [
+            'иванов', 'петров', 'сидоров', 'смирнов', 'козлов', 'новиков', 'морозов', 'федоров',
+            'волков', 'соловьев', 'розанов', 'казаков', 'рыбаков', 'савельев', 'николаев',
+            'макаров', 'борисов', 'дмитриев', 'алексеев', 'андреев', 'васильев', 'григорьев',
+            'михайлов', 'фомин', 'чулков', 'шевцов', 'калимов', 'попов', 'солдатов', 'крюков',
+            'гусев', 'шестаков', 'щенников', 'кулагин', 'гаврилов', 'ершов', 'трофимов',
+            'мартынов', 'емельянов', 'голубев', 'курочкин', 'зайцев', 'сидоренко', 'бородин'
+        ];
+
+        const ORGANIZATIONS = [
+            'ооо', 'зао', 'пао', 'ип', 'администрация', 'министерство', 'департамент', 'комитет',
+            'фонд', 'ассоциация', 'союз', 'корпорация', 'группа', 'холдинг', 'банк', 'страховая',
+            'институт', 'центр', 'агентство', 'служба', 'управление', 'компания', 'предприятие'
+        ];
+
+        // Грамматики для разных типов сущностей
+        const FirstName = rule(normalized(PERSON_NAMES));
+        const LastName = rule(normalized(LAST_NAMES));
+        const OrgName = rule(normalized(ORGANIZATIONS));
+
+        // Полное имя (может быть Иван Иванович Иванов или Иван Иванов)
+        const FullName = rule(
+            LastName.optional(),
+            FirstName.optional(),
+            FirstName.optional() // для отчества
+        ).repeat(2, 3);
+
+        // Организация (упрощённо)
+        const Organization = rule(
+            OrgName,
+            dict(['оформления', 'обеспечения', 'развития', 'управления', 'производства', 'продаж'])
+        );
+
+        // Комбинируем все правила
+        const Grammar = or(
+            rule(FullName).interpretation('PERSON'),
+            rule(Organization).interpretation('ORGANIZATION')
+        );
+
+        statusDiv.textContent = '✅ YARGY готов. Можно вводить текст.';
+        button.disabled = false;
+
+        // --- Логика анонимизации ---
+        button.addEventListener('click', () => {
+            const inputText = document.getElementById('inputText').value;
+            if (!inputText.trim()) {
+                statusDiv.textContent = '⚠️ Введите текст для анонимизации.';
+                return;
+            }
+
+            // Визуальная обратная связь
+            button.disabled = true;
+            statusDiv.textContent = '⏳ Идет анализ текста...';
+
+            try {
+                // Создаем парсер
+                const parser = yargy(Grammar);
+                
+                // Парсим текст
+                const matches = Array.from(parser(inputText));
+                
+                // Анонимизируем текст
+                let anonymizedText = inputText;
+                let totalReplacements = 0;
+                
+                // Обрабатываем найденные сущности в обратном порядке (чтобы не сбить индексы)
+                matches.reverse();
+                
+                for (const match of matches) {
+                    const start = match.fact.span[0];
+                    const end = match.fact.span[1];
+                    const matchedText = inputText.substring(start, end);
+                    
+                    // Определяем тип сущности и заменяем на соответствующую метку
+                    let replacement = '[СУЩНОСТЬ]';
+                    if (match.fact.interpretation === 'PERSON') {
+                        replacement = '[ФИО]';
+                    } else if (match.fact.interpretation === 'ORGANIZATION') {
+                        replacement = '[ОРГАНИЗАЦИЯ]';
+                    }
+                    
+                    // Выполняем замену
+                    anonymizedText = anonymizedText.substring(0, start) + 
+                                    replacement + 
+                                    anonymizedText.substring(end);
+                    
+                    totalReplacements++;
+                }
+                
+                // Выводим результат
+                document.getElementById('inputText').value = anonymizedText;
+                statusDiv.textContent = `✅ Готово! Найдено и заменено ${totalReplacements} сущностей.`;
+            } catch (error) {
+                console.error('Ошибка анонимизации:', error);
+                statusDiv.textContent = '❌ Произошла ошибка. Попробуйте еще раз.';
+            } finally {
+                button.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
