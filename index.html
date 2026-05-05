@@ -3,113 +3,173 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (WinkNLP для русского языка)</title>
+    <title>Анонимизатор (DistilBERT ONNX)</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
-        textarea { width: 100%; height: 300px; margin-bottom: 1em; padding: 0.5em; box-sizing: border-box; }
-        button { padding: 0.5em 2em; font-size: 1em; cursor: pointer; }
-        #status { margin: 1em 0; color: #555; }
-        .note { font-size: 0.9em; color: #777; margin-top: 2em; border-top: 1px solid #eee; padding-top: 1em; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; background: #f8f9fa; }
+        textarea { width: 100%; height: 250px; margin: 1em 0; padding: 0.8em; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; resize: vertical; }
+        button { padding: 0.6em 1.5em; font-size: 16px; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        #status { margin: 0.5em 0; font-weight: 500; color: #334155; min-height: 1.2em; }
+        #progress-bar { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin: 0.5em 0; }
+        #progress-fill { height: 100%; width: 0%; background: #10b981; transition: width 0.3s; }
+        .note { font-size: 0.9em; color: #64748b; margin-top: 2em; border-top: 1px solid #e2e8f0; padding-top: 1em; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8em; margin: 1em 0; border-radius: 0 6px 6px 0; }
     </style>
 </head>
 <body>
 
-    <h1>🔒 Анонимизация текстов (WinkNLP для русского языка)</h1>
-    <textarea id="inputText" placeholder="Введите или вставьте текст..."></textarea>
-    <button id="anonymizeBtn" disabled>Анонимизировать</button>
-    <div id="status">Загрузка WinkNLP...</div>
-
-    <div class="note">
-        <strong>Как это работает:</strong> Используется WinkNLP - мощная NLP-библиотека с поддержкой русского языка.
-        Анализ происходит локально в браузере, данные <strong>не передаются</strong> на сервер.
+    <h1>🔒 Анонимизация текстов (DistilBERT ONNX)</h1>
+    
+    <div class="warning" id="fileWarning" style="display:none">
+        ⚠️ <strong>Внимание:</strong> Вы открыли файл через <code>file://</code>. 
+        Модель может не загрузиться из-за ограничений браузера. 
+        Для надёжной работы запустите через локальный сервер: 
+        <code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/wink-nlp@2.3.0/dist/wink-nlp.umd.min.js"></script>
-    <script>
-        // --- Загрузка и инициализация WinkNLP ---
-        const statusDiv = document.getElementById('status');
-        const button = document.getElementById('anonymizeBtn');
+    <textarea id="inputText" placeholder="Вставьте текст для обработки...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Его телефон +7 (916) 555-44-33, а почта ivanov@yandex.ru.</textarea>
+    <button id="anonymizeBtn" disabled>Анонимизировать</button>
+    <div id="status">Инициализация...</div>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
 
-        statusDiv.textContent = '⏳ Инициализация WinkNLP...';
+    <div class="note">
+        <strong>Как это работает:</strong> Нейросеть DistilBERT (~75 МБ) загружается один раз и сохраняется в кэше браузера. 
+        Текст обрабатывается локально, данные <strong>не покидают</strong> ваше устройство.
+    </div>
 
-        // Ждем полной загрузки библиотеки
-        const checkLibrary = setInterval(() => {
-            if (typeof window.winkNLP !== 'undefined') {
-                clearInterval(checkLibrary);
-                initializeAnonymizer();
-            }
-        }, 100);
+    <script type="module">
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 
-        function initializeAnonymizer() {
-            statusDiv.textContent = '✅ WinkNLP готов. Можно вводить текст.';
-            button.disabled = false;
-
-            // --- Логика анонимизации ---
-            button.addEventListener('click', () => {
-                const inputText = document.getElementById('inputText').value;
-                if (!inputText.trim()) {
-                    statusDiv.textContent = '⚠️ Введите текст для анонимизации.';
-                    return;
-                }
-
-                // Визуальная обратная связь
-                button.disabled = true;
-                statusDiv.textContent = '⏳ Идет анализ текста...';
-
-                try {
-                    // Простая анонимизация с использованием NER
-                    const anonymizedText = anonymizeWithNER(inputText);
-                    
-                    // Выводим результат
-                    document.getElementById('inputText').value = anonymizedText;
-                    statusDiv.textContent = `✅ Готово! Выполнена анонимизация текста.`;
-                } catch (error) {
-                    console.error('Ошибка анонимизации:', error);
-                    statusDiv.textContent = '❌ Произошла ошибка. Попробуйте еще раз.';
-                } finally {
-                    button.disabled = false;
-                }
-            });
+        // Показываем предупреждение, если открыто через file://
+        if (window.location.protocol === 'file:') {
+            document.getElementById('fileWarning').style.display = 'block';
         }
 
-        /**
-         * Функция анонимизации текста с использованием NER
-         */
-        function anonymizeWithNER(text) {
-            // WinkNLP не имеет встроенной поддержки русского языка,
-            // поэтому используем альтернативный подход с эмуляцией NER
-            // на основе морфологического анализа
-            
-            // В этом примере мы создаем эмуляцию NER, потому что
-            // полноценные русские NER-модели для браузера требуют
-            // больших ресурсов и времени загрузки
-            
-            let result = text;
-            
-            // Анонимизация на основе эвристик и частей речи
-            // (это упрощенная версия, так как полноценная русская NER
-            // в браузере требует значительных ресурсов)
-            
-            // Анонимизация потенциальных имен собственных
-            // (начинающихся с заглавной буквы и встречающихся в начале предложения или после точки)
-            const properNounsPattern = /(^|[.!?]\s+|[«"\s(])([А-ЯЁ][а-яё]+)\s+([А-ЯЁ][а-яё]+)/g;
-            result = result.replace(properNounsPattern, '$1[ФИО] $3');
-            
-            // Анонимизация организаций
-            const orgPattern = /\b(?:ООО|ЗАО|ОАО|ПАО|ИП|АО)\s+[А-ЯЁ][А-ЯЁа-яё\s\d\-«»"'.,]*\b/gi;
-            result = result.replace(orgPattern, '[ОРГАНИЗАЦИЯ]');
-            
-            // Анонимизация местоположений (города, страны)
-            const locations = ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 
-                              'Нижний Новгород', 'Челябинск', 'Самара', 'Омск', 'Ростов-на-Дону',
-                              'Россия', 'РФ', 'США', 'Китай', 'Германия', 'Франция'];
-            
-            for (const location of locations) {
-                const locationPattern = new RegExp(location, 'gi');
-                result = result.replace(locationPattern, '[МЕСТО]');
+        // Используем jsdelivr как основной источник (более мягкий CORS)
+        env.remoteHost = 'https://cdn.jsdelivr.net/gh/Xenova/transformers.js@main/';
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+
+        const statusDiv = document.getElementById('status');
+        const progressFill = document.getElementById('progress-fill');
+        const button = document.getElementById('anonymizeBtn');
+        const textarea = document.getElementById('inputText');
+
+        let pipe;
+
+        async function loadModel() {
+            statusDiv.textContent = '⏳ Загрузка модели (может занять 10-30 сек)...';
+            try {
+                pipe = await pipeline(
+                    'token-classification',
+                    'Xenova/distilbert-base-multilingual-cased-finetuned-ner',
+                    {
+                        progress_callback: (e) => {
+                            if (e.status === 'download' || e.status === 'progress') {
+                                if (e.loaded && e.total) {
+                                    const pct = Math.round((e.loaded / e.total) * 100);
+                                    statusDiv.textContent = `⏳ Загрузка: ${pct}% (${(e.loaded/1024/1024).toFixed(1)} МБ)`;
+                                    progressFill.style.width = `${pct}%`;
+                                }
+                            } else if (e.status === 'ready') {
+                                statusDiv.textContent = '✅ Модель готова к работе!';
+                                progressFill.style.width = '100%';
+                                button.disabled = false;
+                            }
+                        }
+                    }
+                );
+            } catch (err) {
+                console.error('Ошибка загрузки:', err);
+                if (err.message?.includes('Unauthorized') || err.message?.includes('401')) {
+                    statusDiv.innerHTML = '❌ Ошибка 401: браузер блокирует загрузку модели через <code>file://</code>.<br>👉 Запустите через локальный сервер: <code>python -m http.server 8000</code>';
+                } else {
+                    statusDiv.textContent = '❌ Не удалось загрузить модель. Проверьте соединение.';
+                }
+                progressFill.style.background = '#ef4444';
             }
-            
-            return result;
+        }
+
+        loadModel();
+
+        button.addEventListener('click', async () => {
+            const text = textarea.value.trim();
+            if (!text) {
+                statusDiv.textContent = '⚠️ Введите текст для анонимизации.';
+                return;
+            }
+
+            button.disabled = true;
+            statusDiv.textContent = '⏳ Анализ текста...';
+            progressFill.style.width = '0%';
+            progressFill.style.background = '#10b981';
+
+            try {
+                const CHUNK_SIZE = 450;
+                const OVERLAP = 60;
+                const chunks = [];
+                let i = 0;
+                while (i < text.length) {
+                    chunks.push({ text: text.slice(i, i + CHUNK_SIZE), offset: i });
+                    i += CHUNK_SIZE - OVERLAP;
+                }
+
+                const allEntities = [];
+                for (let idx = 0; idx < chunks.length; idx++) {
+                    const chunk = chunks[idx];
+                    const pct = Math.round(((idx + 1) / chunks.length) * 100);
+                    progressFill.style.width = `${pct}%`;
+                    statusDiv.textContent = `⏳ Обработка фрагмента ${idx + 1}/${chunks.length}...`;
+
+                    const results = await pipe(chunk.text, { aggregation_strategy: 'simple' });
+
+                    for (const ent of results) {
+                        allEntities.push({
+                            start: ent.start + chunk.offset,
+                            end: ent.end + chunk.offset,
+                            type: ent.entity_group || ent.entity,
+                            score: ent.score
+                        });
+                    }
+                }
+
+                const THRESHOLD = 0.65;
+                let filtered = allEntities.filter(e => e.score >= THRESHOLD);
+                filtered.sort((a, b) => a.start - b.start);
+                const merged = [];
+                for (const ent of filtered) {
+                    if (merged.length === 0 || ent.start >= merged[merged.length - 1].end) {
+                        merged.push(ent);
+                    } else if (ent.score > merged[merged.length - 1].score) {
+                        merged[merged.length - 1] = ent;
+                    }
+                }
+
+                let anonymized = text;
+                let count = 0;
+                merged.reverse().forEach(ent => {
+                    const label = mapEntityType(ent.type);
+                    anonymized = anonymized.substring(0, ent.start) + `[${label}]` + anonymized.substring(ent.end);
+                    count++;
+                });
+
+                textarea.value = anonymized;
+                statusDiv.textContent = `✅ Готово! Найдено и заменено ${count} сущностей.`;
+            } catch (err) {
+                console.error('Ошибка обработки:', err);
+                statusDiv.textContent = '❌ Ошибка при обработке. Попробуйте сократить текст.';
+                progressFill.style.background = '#ef4444';
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        function mapEntityType(type) {
+            const map = {
+                PER: 'ФИО', PERSON: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ',
+                LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ'
+            };
+            return map[type] || type.toUpperCase();
         }
     </script>
 </body>
