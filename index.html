@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (прямая маскировка токенов)</title>
+    <title>Анонимизатор (с организациями и email)</title>
     <style>
         :root {
             --primary: #2563eb;
@@ -129,7 +129,7 @@
 </head>
 <body>
 <div class="card">
-    <h1>🔒 Анонимизация текстов (прямая маскировка токенов)</h1>
+    <h1>🔒 Анонимизация текстов (улучшенная)</h1>
 
     <div id="fileWarning" class="warning">
         ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
@@ -157,8 +157,8 @@
     <div class="debug" id="debugPanel"></div>
 
     <div class="hint">
-        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (токены маскируются напрямую)<br>
-        <strong>Regex‑типы:</strong> паспорт, СНИЛС, ИНН, ОГРН, телефон, email (с контрольными суммами)<br>
+        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER + regex)<br>
+        <strong>Regex‑типы:</strong> организации, email, телефон, паспорт, СНИЛС, ИНН, ОГРН<br>
         <strong>Приватность:</strong> всё локально
     </div>
 </div>
@@ -237,27 +237,36 @@
     function findRegexEntities(text) {
         const results = [];
         const patterns = [
+            // Паспорт, СНИЛС, ИНН, ОГРН
             { regex: /\b\d{4}[\s-]?\d{6}\b/g,                         type: 'PASSPORT' },
             { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g,   type: 'SNILS' },
             { regex: /\b\d{12}\b/g,                                     type: 'INN' },
             { regex: /\b\d{13}(?:\d{2})?\b/g,                           type: 'OGRN' },
+            // Телефоны
             { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE' },
             { regex: /\b[87]\d{10}\b/g,                                  type: 'PHONE' },
-            { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL' }
+            // Email (стандартный с @)
+            { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL' },
+            // Организации (ООО, ЗАО, АО, ОАО, ПАО, ИП) с названием в кавычках или без
+            { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/g, type: 'ORG', score: 1.0 },
+            // Адреса без @, похожие на email (ivanoff.yandex.ru и т.п.)
+            { regex: /\b[A-Za-z0-9._%+-]+\.(?:yandex|mail|gmail|list|bk|inbox|rambler)\.ru\b/g, type: 'EMAIL' }
         ];
-        for (const { regex, type } of patterns) {
+
+        for (const { regex, type, score = 1.0 } of patterns) {
             let match;
             while ((match = regex.exec(text)) !== null) {
                 const word = match[0];
                 if (type === 'INN'   && !isValidINN(word))   continue;
                 if (type === 'SNILS' && !isValidSNILS(word)) continue;
                 if (type === 'OGRN'  && !isValidOGRN(word))  continue;
+                // Если телефон слитный (11 цифр) и уже захвачен более общим шаблоном, избегаем дублей
                 results.push({
                     start: match.index,
                     end: match.index + word.length,
                     word,
                     entity_group: type,
-                    score: 1.0
+                    score
                 });
             }
         }
@@ -267,56 +276,34 @@
     // Прямое определение позиций токенов
     function locateTokens(tokens, text) {
         const located = [];
-        let currentPos = 0; // позиция в тексте, с которой ищем следующий токен
-
+        let currentPos = 0;
         for (const t of tokens) {
             let word = t.word;
             const isSubword = word.startsWith('##');
+            if (isSubword) word = word.slice(2);
             if (isSubword) {
-                word = word.slice(2);
-            }
-
-            if (isSubword) {
-                // подслово должно примыкать к предыдущему токену без пробела
                 const idx = text.indexOf(word, currentPos);
-                if (idx !== currentPos) {
-                    // иногда подслово может быть после пробела? Модель BERT так не делает,
-                    // поэтому пропускаем, если не стыкуется
-                    continue;
-                }
-                located.push({
-                    ...t,
-                    start: idx,
-                    end: idx + word.length,
-                    word: text.slice(idx, idx + word.length)
-                });
+                if (idx !== currentPos) continue;
+                located.push({ ...t, start: idx, end: idx + word.length, word: text.slice(idx, idx + word.length) });
                 currentPos = idx + word.length;
             } else {
-                // обычный токен: ищем, начиная с currentPos
                 const idx = text.indexOf(word, currentPos);
                 if (idx === -1) continue;
-                // обновляем позицию, даже если перед словом были пробелы
-                located.push({
-                    ...t,
-                    start: idx,
-                    end: idx + word.length,
-                    word: text.slice(idx, idx + word.length)
-                });
+                located.push({ ...t, start: idx, end: idx + word.length, word: text.slice(idx, idx + word.length) });
                 currentPos = idx + word.length;
             }
         }
         return located;
     }
 
-    // Преобразуем BIO-метку в группу (PER, ORG, ...)
     const bioToGroup = {
         LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
         ORG: 'ORG', ORGANIZATION: 'ORG',
         LOC: 'LOC', GPE: 'GPE',
+        CITY: 'LOC', STREET: 'LOC',   // добавлено
         MISC: 'MISC'
     };
 
-    // Объединение соседних токенов персоны в одну сущность
     function mergePersonTokens(entities, text) {
         const merged = [];
         for (const e of entities) {
@@ -326,7 +313,6 @@
             }
             const prev = merged[merged.length-1];
             const bothPerson = (prev.entity_group === 'PER' && e.entity_group === 'PER');
-            // объединяем, если конец предыдущего и начало текущего практически соседние (допустим пробел)
             if (bothPerson && e.start <= prev.end + 2) {
                 prev.end = e.end;
                 prev.word = text.slice(prev.start, e.end);
@@ -357,7 +343,6 @@
         });
     }
 
-    // Загрузка модели
     loadBtn.addEventListener('click', async () => {
         loadBtn.disabled = true;
         loadBtn.textContent = '⏳ Загрузка...';
@@ -400,7 +385,6 @@
         }
     });
 
-    // Анонимизация
     runBtn.addEventListener('click', async () => {
         const text = textarea.value.trim();
         if (!text) { status.textContent = '⚠️ Введите текст'; return; }
@@ -416,15 +400,12 @@
         try {
             const threshold = parseFloat(nerThreshold.value);
 
-            // 1. Сырые токены
             const rawTokens = await nerPipeline(text, { group_entities: true });
             lastDebug += `🔍 Сырые NER‑токены (${rawTokens.length}):\n${JSON.stringify(rawTokens, null, 2)}\n\n`;
 
-            // 2. Определяем позиции
             const located = locateTokens(rawTokens, text);
             lastDebug += `📍 Токены с позициями (${located.length}):\n${JSON.stringify(located, null, 2)}\n\n`;
 
-            // 3. Преобразуем в сущности с типом
             const nerEntities = located
                 .filter(t => t.score >= threshold)
                 .map(t => {
@@ -440,19 +421,15 @@
                     };
                 });
 
-            // 4. Объединяем соседние PER (ФИО)
             const nerMerged = mergePersonTokens(nerEntities, text);
             lastDebug += `🧩 NER‑сущности после объединения PER: ${nerMerged.length}\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
 
-            // 5. Regex‑сущности
             const regexEntities = findRegexEntities(text);
             lastDebug += `🔎 Regex‑сущности (${regexEntities.length}):\n${JSON.stringify(regexEntities.map(e=>({word:e.word, type:e.entity_group})), null, 2)}\n\n`;
 
-            // 6. Объединяем все
             let all = [...nerMerged, ...regexEntities]
                 .filter(e => entityConfig[e.entity_group]?.enabled);
 
-            // 7. Разрешение перекрытий (как и раньше)
             all.sort((a,b) => a.start - b.start);
             const finalEntities = [];
             for (const e of all) {
@@ -467,7 +444,6 @@
             }
             lastDebug += `✅ Итоговые сущности (${finalEntities.length}):\n${finalEntities.map(e=>`  [${e.start}-${e.end}] ${e.word} → ${e.entity_group} (${e.score.toFixed(3)})`).join('\n')}\n\n`;
 
-            // 8. Замена
             let result = text;
             const replacements = [];
             for (let i = finalEntities.length-1; i >= 0; i--) {
@@ -498,12 +474,10 @@
         }
     });
 
-    // Порог
     nerThreshold.addEventListener('input', () => {
         thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
     });
 
-    // Отладка
     debugToggle.addEventListener('click', () => {
         if (lastDebug) {
             debugPanel.textContent = lastDebug;
@@ -518,4 +492,4 @@
     thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
 </script>
 </body>
-</html>з
+</html>
