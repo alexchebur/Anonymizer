@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Gherman BERT NER)</title>
+    <title>Анонимизатор (Gherman BERT ONNX)</title>
     <style>
         :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --card: #fff; }
         body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
@@ -30,7 +30,7 @@
 </head>
 <body>
     <div class="card">
-        <h1>🔒 Анонимизация (Gherman BERT NER)</h1>
+        <h1>🔒 Анонимизация (Gherman BERT ONNX)</h1>
         <div id="fileWarning" class="warning">⚠️ Запустите через: <code>python -m http.server 8000</code></div>
 
         <div class="rules-panel" id="rulesPanel">
@@ -52,7 +52,7 @@
         <textarea id="inputText" disabled placeholder="Вставьте текст...">Иванов Иван Петрович из Москвы работает в ООО Яндекс.</textarea>
         <div class="debug" id="debugPanel"></div>
         <div class="hint">
-            <strong>Модель:</strong> <code>Gherman/bert-base-NER-Russian</code> (ONNX).<br>
+            <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code>.<br>
             Специализирована на русском языке, понимает падежи и детальные типы сущностей.
         </div>
     </div>
@@ -62,8 +62,8 @@
         // 📦 КОНФИГУРАЦИЯ
         // ==========================================
         const CONFIG = {
-            // Используем ONNX-версию модели Gherman
-            modelId: 'onnx-community/bert-base-NER-Russian', 
+            // Используем квантованную ONNX версию модели Gherman
+            modelId: 'onnx-community/bert-base-NER-Russian-ONNX', 
             nerThreshold: 0.5,
             chunkSize: 450,
             overlap: 60,
@@ -72,7 +72,7 @@
                 'LAST_NAME': 'ФАМИЛИЯ',
                 'FIRST_NAME': 'ИМЯ',
                 'MIDDLE_NAME': 'ОТЧЕСТВО',
-                'PER': 'ФИО', // На случай, если модель вернёт общий тег
+                'PER': 'ФИО', 
                 'CITY': 'ГОРОД',
                 'STREET': 'УЛИЦА',
                 'HOUSE': 'ДОМ',
