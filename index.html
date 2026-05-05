@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (DistilBERT ONNX)</title>
+    <title>Анонимизатор текстов (онлайн)</title>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; background: #f8f9fa; }
         textarea { width: 100%; height: 250px; margin: 1em 0; padding: 0.8em; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; resize: vertical; }
@@ -13,42 +13,27 @@
         #progress-bar { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin: 0.5em 0; }
         #progress-fill { height: 100%; width: 0%; background: #10b981; transition: width 0.3s; }
         .note { font-size: 0.9em; color: #64748b; margin-top: 2em; border-top: 1px solid #e2e8f0; padding-top: 1em; }
-        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8em; margin: 1em 0; border-radius: 0 6px 6px 0; }
     </style>
 </head>
 <body>
-
-    <h1>🔒 Анонимизация текстов (DistilBERT ONNX)</h1>
-    
-    <div class="warning" id="fileWarning" style="display:none">
-        ⚠️ <strong>Внимание:</strong> Вы открыли файл через <code>file://</code>. 
-        Модель может не загрузиться из-за ограничений браузера. 
-        Для надёжной работы запустите через локальный сервер: 
-        <code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
-    </div>
-
+    <h1>🔒 Анонимизация текстов (онлайн)</h1>
     <textarea id="inputText" placeholder="Вставьте текст для обработки...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Его телефон +7 (916) 555-44-33, а почта ivanov@yandex.ru.</textarea>
     <button id="anonymizeBtn" disabled>Анонимизировать</button>
     <div id="status">Инициализация...</div>
     <div id="progress-bar"><div id="progress-fill"></div></div>
-
     <div class="note">
-        <strong>Как это работает:</strong> Нейросеть DistilBERT (~75 МБ) загружается один раз и сохраняется в кэше браузера. 
+        <strong>Как это работает:</strong> Нейросеть загружается один раз и сохраняется в кэше браузера. 
         Текст обрабатывается локально, данные <strong>не покидают</strong> ваше устройство.
     </div>
 
     <script type="module">
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 
-        // Показываем предупреждение, если открыто через file://
-        if (window.location.protocol === 'file:') {
-            document.getElementById('fileWarning').style.display = 'block';
-        }
-
-        // Используем jsdelivr как основной источник (более мягкий CORS)
-        env.remoteHost = 'https://cdn.jsdelivr.net/gh/Xenova/transformers.js@main/';
+        // Настройки для надёжной загрузки через CDN
         env.allowLocalModels = false;
         env.useBrowserCache = true;
+        // Приоритет: jsdelivr (мягче CORS) → Hugging Face
+        env.remoteHost = 'https://cdn.jsdelivr.net/gh/Xenova/transformers.js@main/';
 
         const statusDiv = document.getElementById('status');
         const progressFill = document.getElementById('progress-fill');
@@ -58,7 +43,7 @@
         let pipe;
 
         async function loadModel() {
-            statusDiv.textContent = '⏳ Загрузка модели (может занять 10-30 сек)...';
+            statusDiv.textContent = '⏳ Загрузка модели (~75 МБ)...';
             try {
                 pipe = await pipeline(
                     'token-classification',
@@ -68,11 +53,11 @@
                             if (e.status === 'download' || e.status === 'progress') {
                                 if (e.loaded && e.total) {
                                     const pct = Math.round((e.loaded / e.total) * 100);
-                                    statusDiv.textContent = `⏳ Загрузка: ${pct}% (${(e.loaded/1024/1024).toFixed(1)} МБ)`;
+                                    statusDiv.textContent = `⏳ Загрузка: ${pct}%`;
                                     progressFill.style.width = `${pct}%`;
                                 }
                             } else if (e.status === 'ready') {
-                                statusDiv.textContent = '✅ Модель готова к работе!';
+                                statusDiv.textContent = '✅ Модель готова!';
                                 progressFill.style.width = '100%';
                                 button.disabled = false;
                             }
@@ -81,11 +66,7 @@
                 );
             } catch (err) {
                 console.error('Ошибка загрузки:', err);
-                if (err.message?.includes('Unauthorized') || err.message?.includes('401')) {
-                    statusDiv.innerHTML = '❌ Ошибка 401: браузер блокирует загрузку модели через <code>file://</code>.<br>👉 Запустите через локальный сервер: <code>python -m http.server 8000</code>';
-                } else {
-                    statusDiv.textContent = '❌ Не удалось загрузить модель. Проверьте соединение.';
-                }
+                statusDiv.textContent = '❌ Ошибка загрузки модели. Обновите страницу.';
                 progressFill.style.background = '#ef4444';
             }
         }
@@ -95,34 +76,28 @@
         button.addEventListener('click', async () => {
             const text = textarea.value.trim();
             if (!text) {
-                statusDiv.textContent = '⚠️ Введите текст для анонимизации.';
+                statusDiv.textContent = '⚠️ Введите текст.';
                 return;
             }
 
             button.disabled = true;
-            statusDiv.textContent = '⏳ Анализ текста...';
+            statusDiv.textContent = '⏳ Анализ...';
             progressFill.style.width = '0%';
             progressFill.style.background = '#10b981';
 
             try {
-                const CHUNK_SIZE = 450;
-                const OVERLAP = 60;
+                // Чанкование для стабильности
+                const CHUNK_SIZE = 450, OVERLAP = 60;
                 const chunks = [];
-                let i = 0;
-                while (i < text.length) {
+                for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
                     chunks.push({ text: text.slice(i, i + CHUNK_SIZE), offset: i });
-                    i += CHUNK_SIZE - OVERLAP;
                 }
 
                 const allEntities = [];
                 for (let idx = 0; idx < chunks.length; idx++) {
                     const chunk = chunks[idx];
-                    const pct = Math.round(((idx + 1) / chunks.length) * 100);
-                    progressFill.style.width = `${pct}%`;
-                    statusDiv.textContent = `⏳ Обработка фрагмента ${idx + 1}/${chunks.length}...`;
-
+                    progressFill.style.width = `${Math.round(((idx+1)/chunks.length)*100)}%`;
                     const results = await pipe(chunk.text, { aggregation_strategy: 'simple' });
-
                     for (const ent of results) {
                         allEntities.push({
                             start: ent.start + chunk.offset,
@@ -133,44 +108,36 @@
                     }
                 }
 
+                // Фильтрация и разрешение перекрытий
                 const THRESHOLD = 0.65;
                 let filtered = allEntities.filter(e => e.score >= THRESHOLD);
                 filtered.sort((a, b) => a.start - b.start);
                 const merged = [];
                 for (const ent of filtered) {
-                    if (merged.length === 0 || ent.start >= merged[merged.length - 1].end) {
+                    if (!merged.length || ent.start >= merged[merged.length-1].end) {
                         merged.push(ent);
-                    } else if (ent.score > merged[merged.length - 1].score) {
-                        merged[merged.length - 1] = ent;
+                    } else if (ent.score > merged[merged.length-1].score) {
+                        merged[merged.length-1] = ent;
                     }
                 }
 
-                let anonymized = text;
-                let count = 0;
+                // Замена с конца, чтобы не сбить индексы
+                let result = text;
                 merged.reverse().forEach(ent => {
-                    const label = mapEntityType(ent.type);
-                    anonymized = anonymized.substring(0, ent.start) + `[${label}]` + anonymized.substring(ent.end);
-                    count++;
+                    const label = {PER:'ФИО',PERSON:'ФИО',ORG:'ОРГАНИЗАЦИЯ',LOC:'МЕСТО',GPE:'ЛОКАЦИЯ'}[ent.type] || ent.type;
+                    result = result.slice(0, ent.start) + `[${label}]` + result.slice(ent.end);
                 });
 
-                textarea.value = anonymized;
-                statusDiv.textContent = `✅ Готово! Найдено и заменено ${count} сущностей.`;
+                textarea.value = result;
+                statusDiv.textContent = `✅ Готово! Заменено ${merged.length} сущностей.`;
             } catch (err) {
-                console.error('Ошибка обработки:', err);
-                statusDiv.textContent = '❌ Ошибка при обработке. Попробуйте сократить текст.';
+                console.error('Ошибка:', err);
+                statusDiv.textContent = '❌ Ошибка обработки.';
                 progressFill.style.background = '#ef4444';
             } finally {
                 button.disabled = false;
             }
         });
-
-        function mapEntityType(type) {
-            const map = {
-                PER: 'ФИО', PERSON: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ',
-                LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ'
-            };
-            return map[type] || type.toUpperCase();
-        }
     </script>
 </body>
 </html>
