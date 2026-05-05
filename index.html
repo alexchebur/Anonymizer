@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (NER + Чанкование + Юр.тексты)</title>
+    <title>Анонимизатор (Чистый NER)</title>
     <style>
-        :root { --primary: #2563eb; --success: #10b981; --error: #ef4444; --bg: #f8fafc; --card: #ffffff; }
-        body { font-family: system-ui, -apple-system, sans-serif; max-width: 950px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
+        :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --card: #fff; }
+        body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
         .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
         textarea { width: 100%; height: 280px; margin: 1rem 0; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; resize: vertical; background: #f8fafc; font-family: monospace; }
         textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
@@ -15,34 +15,30 @@
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         #loadBtn { background: var(--primary); color: white; }
         #runBtn { background: var(--success); color: white; }
-        #debugBtn { background: #64748b; color: white; }
         #status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
         .progress { width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin: 0.5rem 0; }
         .progress-bar { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s; }
         .progress-bar.success { background: var(--success); }
-        .progress-bar.error { background: var(--error); }
-        .rules-panel { background: #f1f5f9; padding: 0.8rem; border-radius: 8px; margin: 0.5rem 0; font-size: 0.85rem; }
-        .rules-panel label { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.8rem; cursor: pointer; }
-        .debug { font-size: 0.75rem; color: #475569; margin-top: 0.5rem; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; display: none; background: #f8fafc; padding: 0.5rem; border-radius: 6px; border: 1px solid #e2e8f0; }
+        .progress-bar.error { background: #ef4444; }
+        .debug { font-size: 0.75rem; color: #475569; margin-top: 0.5rem; font-family: monospace; white-space: pre-wrap; max-height: 250px; overflow-y: auto; display: none; background: #f8fafc; padding: 0.5rem; border-radius: 6px; border: 1px solid #e2e8f0; }
         .debug.show { display: block; }
         .hint { font-size: 0.85rem; color: #64748b; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
         .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; display: none; }
+        .rules-panel { background: #f1f5f9; padding: 0.8rem; border-radius: 8px; margin: 0.5rem 0; font-size: 0.85rem; }
+        .rules-panel label { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.8rem; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>🔒 Анонимизация текстов (NER + Юр.формат)</h1>
-        
+        <h1>🔒 Анонимизация (Чистый NER)</h1>
         <div id="fileWarning" class="warning">⚠️ Запустите через: <code>python -m http.server 8000</code></div>
 
         <div class="rules-panel" id="rulesPanel">
-            <strong>Правила:</strong><br>
-            <label><input type="checkbox" checked data-rule="ner"> 🧠 Нейросеть (ФИО, Org, Loc)</label>
-            <label><input type="checkbox" checked data-rule="passport"> 📄 Паспорт</label>
-            <label><input type="checkbox" checked data-rule="inn"> 🔢 ИНН</label>
-            <label><input type="checkbox" checked data-rule="ogrn"> 🏢 ОГРН/ОГРНИП</label>
-            <label><input type="checkbox" checked data-rule="snils"> 🆔 СНИЛС</label>
-            <label><input type="checkbox" checked data-rule="address"> 📍 Адрес</label>
+            <strong>Типы сущностей:</strong><br>
+            <label><input type="checkbox" checked data-rule="PER"> 👤 ФИО</label>
+            <label><input type="checkbox" checked data-rule="ORG"> 🏢 Организации</label>
+            <label><input type="checkbox" checked data-rule="LOC"> 📍 Локации</label>
+            <label><input type="checkbox" checked data-rule="struct"> 🔢 Структурированные (ИНН/ОГРН/Паспорт)</label>
         </div>
 
         <div class="btn-group">
@@ -53,48 +49,43 @@
         
         <div id="status">Нажмите "Загрузить модель"</div>
         <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-        
-        <textarea id="inputText" disabled placeholder="Вставьте текст...">Доверенность... (ваш текст)</textarea>
-        
+        <textarea id="inputText" disabled placeholder="Вставьте текст..."></textarea>
         <div class="debug" id="debugPanel"></div>
-        
         <div class="hint">
-            <strong>Оптимизировано для:</strong> юридических документов, доверенностей, договоров. 
-            Автоматически разбивает текст на фрагменты, учитывает падежные формы ФИО.
+            <strong>Как работает:</strong> Полностью на базе NER-модели. 
+            Поддерживает падежные формы, автоматическое чанкование длинных текстов и слияние разбитых сущностей.
         </div>
     </div>
 
     <script type="module">
         // ==========================================
-        // 📦 КОНФИГУРАЦИЯ
+        // 📦 КОНФИГУРАЦИЯ (легко менять модель)
         // ==========================================
-        const ANONYMIZER_CONFIG = {
-            nerLabels: {
-                PER: 'ФИО', PERSON: 'ФИО',
-                LAST_NAME: 'ФАМИЛИЯ', FIRST_NAME: 'ИМЯ', MIDDLE_NAME: 'ОТЧЕСТВО',
+        const CONFIG = {
+            // Модель: мультиязычная лучше справляется с морфологией русского
+            modelId: 'Xenova/distilbert-base-multilingual-cased-finetuned-ner',
+            nerThreshold: 0.25, // Понижен для склонённых форм
+            chunkSize: 420,
+            overlap: 70,
+            // Маппинг типов
+            labels: {
+                PER: 'ФИО', PERSON: 'ФИО', 
                 ORG: 'ОРГАНИЗАЦИЯ', ORGANIZATION: 'ОРГАНИЗАЦИЯ',
-                LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ'
+                LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ',
+                // Структурированные типы
+                PASSPORT: 'ПАСПОРТ', INN: 'ИНН', OGRN: 'ОГРН', SNILS: 'СНИЛС', ADDRESS: 'АДРЕС'
             },
-            regexRules: [
-                { id: 'passport', label: 'ПАСПОРТ', pattern: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi },
-                { id: 'inn', label: 'ИНН', pattern: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi },
-                { id: 'ogrn', label: 'ОГРН', pattern: /(?:ОГРН[ИП]?\s*:?\s*)?\d{13,15}\b/gi },
-                { id: 'snils', label: 'СНИЛС', pattern: /(?:СНИЛС\s*:?\s*)?(?:\d{3}-\d{3}-\d{3}\s?\d{2}|\d{11})\b/gi },
-                { id: 'address', label: 'АДРЕС', pattern: /(?:ул\.|улица|пр-кт|проспект|пер\.|переулок|пл\.|площадь|бул\.|бульвар|ш\.|шоссе|наб\.|набережная|д\.|дом|кв\.|квартира|офис|помещение)\s+[А-ЯЁа-яё\d\s\-\.,«»"'/#№]{3,50}/gi }
-            ],
-            settings: {
-                nerThreshold: 0.35, // Снижено для падежных форм
-                modelId: 'onnx-community/bert-base-NER-Russian-ONNX',
-                chunkSize: 400,     // BERT limit ~512 tokens
-                overlap: 60
-            }
+            // Regex только для структурированных данных (не для ФИО!)
+            structPatterns: [
+                { id: 'PASSPORT', label: 'ПАСПОРТ', pattern: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi },
+                { id: 'INN', label: 'ИНН', pattern: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi },
+                { id: 'OGRN', label: 'ОГРН', pattern: /(?:ОГРН[ИП]?\s*:?\s*)?\d{13,15}\b/gi },
+                { id: 'SNILS', label: 'СНИЛС', pattern: /(?:СНИЛС\s*:?\s*)?(?:\d{3}-\d{3}-\d{3}\s?\d{2}|\d{11})\b/gi },
+                { id: 'ADDRESS', label: 'АДРЕС', pattern: /(?:ул\.|улица|пр-кт|проспект|пер\.|д\.|дом|кв\.|квартира)\s+[А-ЯЁа-яё\d\s\-\.,«»"'#№]{3,50}/gi }
+            ]
         };
 
-        // ==========================================
-        // ⚙️ ЯДРО
-        // ==========================================
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
-
         if (window.location.protocol === 'file:') document.getElementById('fileWarning').style.display = 'block';
         env.allowLocalModels = false;
         env.useBrowserCache = true;
@@ -106,13 +97,12 @@
         const status = document.getElementById('status');
         const progressBar = document.getElementById('progressBar');
         const debugPanel = document.getElementById('debugPanel');
-
         let pipe, lastDebug = '';
 
-        function getActiveRules() {
+        function getActiveTypes() {
             const active = new Set();
             document.querySelectorAll('#rulesPanel input:checked').forEach(cb => active.add(cb.dataset.rule));
-            return { useNer: active.has('ner'), regexRules: ANONYMIZER_CONFIG.regexRules.filter(r => active.has(r.id)) };
+            return active;
         }
 
         loadBtn.addEventListener('click', async () => {
@@ -120,7 +110,7 @@
             status.textContent = '⏳ Инициализация...';
             progressBar.className = 'progress-bar'; progressBar.style.width = '10%';
             try {
-                pipe = await pipeline('token-classification', ANONYMIZER_CONFIG.settings.modelId, {
+                pipe = await pipeline('token-classification', CONFIG.modelId, {
                     progress_callback: (e) => {
                         if (e.total && e.loaded) {
                             const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
@@ -144,73 +134,86 @@
         runBtn.addEventListener('click', async () => {
             const text = textarea.value.trim();
             if (!text) { status.textContent = '⚠️ Введите текст'; return; }
+            const types = getActiveTypes();
 
             runBtn.disabled = true; status.textContent = '⏳ Анализ...';
             progressBar.className = 'progress-bar'; progressBar.style.width = '5%';
             debugPanel.classList.remove('show'); lastDebug = '';
 
             try {
-                const { useNer, regexRules } = getActiveRules();
                 const allEntities = [];
 
-                // 1. NER с чанкованием
-                if (useNer && pipe) {
-                    const { chunkSize, overlap } = ANONYMIZER_CONFIG.settings;
+                // 1. NER (чанкование для длинных текстов)
+                if ((types.has('PER') || types.has('ORG') || types.has('LOC')) && pipe) {
+                    const { chunkSize, overlap } = CONFIG;
                     const chunks = [];
                     for (let i = 0; i < text.length; i += chunkSize - overlap) {
                         chunks.push({ text: text.slice(i, i + chunkSize), offset: i });
                     }
 
                     for (let i = 0; i < chunks.length; i++) {
-                        const progress = 5 + Math.round(((i + 1) / chunks.length) * 45);
-                        progressBar.style.width = `${progress}%`;
+                        progressBar.style.width = `${5 + Math.round(((i + 1) / chunks.length) * 40)}%`;
+                        const res = await pipe(chunks[i].text, { aggregation_strategy: 'simple' });
                         
-                        const results = await pipe(chunks[i].text, { aggregation_strategy: 'simple' });
-                        results.forEach(e => {
-                            if (e.score >= ANONYMIZER_CONFIG.settings.nerThreshold && typeof e.start === 'number') {
+                        for (const e of res) {
+                            const group = e.entity_group || e.entity;
+                            if (group === 'O') continue;
+                            const label = CONFIG.labels[group];
+                            if (!label) continue;
+                            if (!types.has(group) && !(group === 'PER' && types.has('PER'))) continue;
+                            
+                            if (e.score >= CONFIG.nerThreshold && typeof e.start === 'number') {
                                 allEntities.push({
                                     start: e.start + chunks[i].offset,
                                     end: e.end + chunks[i].offset,
-                                    type: ANONYMIZER_CONFIG.nerLabels[e.entity_group] || e.entity_group?.toUpperCase() || 'СУЩНОСТЬ',
-                                    score: e.score, text: text.slice(e.start + chunks[i].offset, e.end + chunks[i].offset), source: 'ner'
+                                    type: label, score: e.score, 
+                                    text: text.slice(e.start + chunks[i].offset, e.end + chunks[i].offset),
+                                    source: 'ner'
                                 });
                             }
-                        });
+                        }
                     }
                 }
 
-                // 2. Regex
-                if (regexRules.length > 0) {
-                    for (const rule of regexRules) {
+                // 2. Структурированные паттерны (только если включено)
+                if (types.has('struct')) {
+                    for (const rule of CONFIG.structPatterns) {
                         rule.pattern.lastIndex = 0;
-                        for (const match of text.matchAll(rule.pattern)) {
+                        for (const m of text.matchAll(rule.pattern)) {
                             allEntities.push({
-                                start: match.index, end: match.index + match[0].length,
-                                type: rule.label, score: 1.0, text: match[0], source: 'regex'
+                                start: m.index, end: m.index + m[0].length,
+                                type: rule.label, score: 1.0, text: m[0], source: 'regex'
                             });
                         }
                     }
                 }
 
-                lastDebug = `🔍 Найдено сущностей: ${allEntities.length}\n`;
-                lastDebug += allEntities.map((e, i) => `#${i+1} [${e.source}] ${e.type} "${e.text.substring(0,30)}${e.text.length>30?'...':''}" (${e.start}-${e.end}) conf:${e.score.toFixed(2)}`).join('\n') + '\n\n';
-
-                // 3. Разрешение перекрытий
+                // 3. Умное слияние соседних сущностей (для падежей и разбитых токенов)
                 allEntities.sort((a, b) => a.start - b.start);
                 const merged = [];
                 for (const ent of allEntities) {
-                    if (!merged.length || ent.start >= merged[merged.length - 1].end) {
+                    if (!merged.length || ent.start > merged[merged.length - 1].end + 2) {
                         merged.push(ent);
                     } else {
+                        // Пересечение или близость ≤2 символов → объединяем
                         const last = merged[merged.length - 1];
-                        const shouldReplace = ent.score > last.score || 
-                                              (ent.score === last.score && (ent.end - ent.start > last.end - last.start)) ||
-                                              (ent.source === 'regex' && last.source === 'ner');
-                        if (shouldReplace) merged[merged.length - 1] = ent;
+                        if (ent.type === last.type) {
+                            // Расширяем границы, берём max score
+                            last.end = Math.max(last.end, ent.end);
+                            last.start = Math.min(last.start, ent.start);
+                            last.score = Math.max(last.score, ent.score);
+                            last.text = text.slice(last.start, last.end);
+                        } else if (ent.score > last.score) {
+                            merged[merged.length - 1] = ent;
+                        }
                     }
                 }
 
-                // 4. Замена
+                // Лог отладки
+                lastDebug = `🔍 Найдено сущностей: ${merged.length}\n`;
+                lastDebug += merged.map((e, i) => `#${i+1} [${e.source}] ${e.type} "${e.text.substring(0,30)}${e.text.length>30?'...':''}" (${e.start}-${e.end}) conf:${e.score.toFixed(2)}`).join('\n') + '\n\n';
+
+                // 4. Замена (с конца)
                 let result = text;
                 merged.reverse().forEach(e => {
                     result = result.slice(0, e.start) + `[${e.type}]` + result.slice(e.end);
