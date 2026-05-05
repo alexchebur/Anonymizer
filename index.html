@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (улучшенная версия)</title>
+    <title>Анонимизатор (полная версия)</title>
     <style>
         :root {
             --primary: #2563eb;
@@ -18,7 +18,7 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: system-ui, -apple-system, sans-serif;
-            max-width: 950px;
+            max-width: 960px;
             margin: 2rem auto;
             padding: 0 1rem;
             background: var(--bg);
@@ -44,16 +44,8 @@
             background: #f8fafc;
             font-family: monospace;
         }
-        textarea:disabled {
-            background: #e2e8f0;
-            cursor: not-allowed;
-        }
-        .btn-group {
-            display: flex;
-            gap: 0.8rem;
-            flex-wrap: wrap;
-            margin: 0.5rem 0;
-        }
+        textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
+        .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; margin: 0.5rem 0; }
         button {
             padding: 0.6rem 1.2rem;
             font-size: 14px;
@@ -63,10 +55,7 @@
             border-radius: 6px;
             transition: opacity 0.2s;
         }
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         #loadBtn { background: var(--primary); color: white; }
         #runBtn { background: var(--success); color: white; }
         #debugToggle { background: #64748b; color: white; }
@@ -86,11 +75,7 @@
         }
         .progress-bar.success { background: var(--success); }
         .progress-bar.error { background: var(--error); }
-        .status {
-            margin: 0.5rem 0;
-            font-weight: 500;
-            min-height: 1.2rem;
-        }
+        .status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
         .hint {
             font-size: 0.85rem;
             color: var(--muted);
@@ -143,364 +128,403 @@
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>🔒 Анонимизация текстов (улучшенная версия)</h1>
+<div class="card">
+    <h1>🔒 Анонимизация текстов (полная версия)</h1>
 
-        <div id="fileWarning" class="warning">
-            ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
-        </div>
-
-        <div class="btn-group">
-            <button id="loadBtn">🔄 Загрузить модель</button>
-            <button id="runBtn" disabled>🔒 Анонимизировать</button>
-            <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
-        </div>
-
-        <div id="status" class="status">Нажмите «Загрузить модель»</div>
-        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-
-        <div class="settings" id="typeSettings">
-            <!-- Заполняется динамически после загрузки модели -->
-        </div>
-
-        <div class="slider-container">
-            <label for="nerThreshold">Порог уверенности NER:</label>
-            <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
-            <span id="thresholdValue">0.70</span>
-        </div>
-
-        <textarea id="inputText" disabled placeholder="Введите текст для анонимизации...">Иванов Иван Петрович работает в ООО Яндекс. Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195. Телефон: +7 (999) 123-45-67</textarea>
-
-        <div class="debug" id="debugPanel"></div>
-
-        <div class="hint">
-            <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER-пайплайн)<br>
-            <strong>Регулярные выражения:</strong> паспорт, СНИЛС, ИНН, ОГРН, телефон, email<br>
-            <strong>Приватность:</strong> всё обрабатывается локально
-        </div>
+    <div id="fileWarning" class="warning">
+        ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
     </div>
 
-    <script type="module">
-        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
+    <div class="btn-group">
+        <button id="loadBtn">🔄 Загрузить модель</button>
+        <button id="runBtn" disabled>🔒 Анонимизировать</button>
+        <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
+    </div>
 
-        if (window.location.protocol === 'file:') {
-            document.getElementById('fileWarning').style.display = 'block';
-        }
+    <div id="status" class="status">Нажмите «Загрузить модель»</div>
+    <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
 
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
+    <div class="settings" id="typeSettings"></div>
 
-        // DOM элементы
-        const loadBtn = document.getElementById('loadBtn');
-        const runBtn = document.getElementById('runBtn');
-        const debugToggle = document.getElementById('debugToggle');
-        const textarea = document.getElementById('inputText');
-        const status = document.getElementById('status');
-        const progressBar = document.getElementById('progressBar');
-        const debugPanel = document.getElementById('debugPanel');
-        const nerThreshold = document.getElementById('nerThreshold');
-        const thresholdValue = document.getElementById('thresholdValue');
-        const typeSettings = document.getElementById('typeSettings');
+    <div class="slider-container">
+        <label for="nerThreshold">Порог уверенности NER:</label>
+        <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
+        <span id="thresholdValue">0.70</span>
+    </div>
 
-        let nerPipeline;
-        let modelLoaded = false;
-        let lastDebug = '';
+    <textarea id="inputText" disabled placeholder="Введите текст для анонимизации...
+Пример: Иванов Иван Петрович работает в ООО Яндекс.
+Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195.
+Телефон: +7 (999) 123-45-67"></textarea>
 
-        // Типы сущностей и их метки по умолчанию
-        const entityConfig = {
-            PER: { label: 'ФИО', enabled: true },
-            ORG: { label: 'ОРГАНИЗАЦИЯ', enabled: true },
-            LOC: { label: 'МЕСТО', enabled: false },
-            GPE: { label: 'ЛОКАЦИЯ', enabled: false },
-            MISC: { label: 'ДРУГОЕ', enabled: false },
-            // Regex-типы
-            PASSPORT: { label: 'ПАСПОРТ', enabled: true },
-            SNILS: { label: 'СНИЛС', enabled: true },
-            INN: { label: 'ИНН', enabled: true },
-            OGRN: { label: 'ОГРН', enabled: true },
-            PHONE: { label: 'ТЕЛЕФОН', enabled: true },
-            EMAIL: { label: 'EMAIL', enabled: true }
-        };
+    <div class="debug" id="debugPanel"></div>
 
-        // --- Вспомогательные функции для валидации ---
-        function isValidINN(inn) {
-            if (!/^\d{12}$/.test(inn)) return false;
-            const digits = inn.split('').map(Number);
-            // ИНН физлица: n10 = (2*n1+4*n2+10*n3+3*n4+5*n5+9*n6+4*n7+6*n8+8*n9+0*n10) mod 11 mod 10
-            const coeff1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
-            const coeff2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
-            let sum1 = 0, sum2 = 0;
-            for (let i = 0; i < 10; i++) sum1 += coeff1[i] * digits[i];
-            for (let i = 0; i < 11; i++) sum2 += coeff2[i] * digits[i];
-            const check1 = (sum1 % 11) % 10;
-            const check2 = (sum2 % 11) % 10;
-            return digits[10] === check1 && digits[11] === check2;
-        }
+    <div class="hint">
+        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER‑токены агрегируются вручную)<br>
+        <strong>Регулярные выражения:</strong> паспорт, СНИЛС, ИНН, ОГРН, телефон, email (с контрольными суммами)<br>
+        <strong>Приватность:</strong> всё обрабатывается локально
+    </div>
+</div>
 
-        function isValidSNILS(snils) {
-            // Ожидаемый формат: 11 цифр (может быть с дефисами/пробелами)
-            const digits = snils.replace(/[\s-]/g, '');
-            if (!/^\d{11}$/.test(digits)) return false;
-            const nums = digits.split('').map(Number);
-            let sum = 0;
-            for (let i = 0; i < 9; i++) sum += nums[i] * (9 - i);
-            let control = sum % 101;
-            if (control === 100 || control === 101) control = 0;
-            return control === parseInt(digits.slice(9, 11), 10);
-        }
+<script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 
-        function isValidOGRN(ogrn) {
-            const digits = ogrn.replace(/\D/g, '');
-            if (digits.length !== 13 && digits.length !== 15) return false;
-            const num = digits.slice(0, -1);
-            const check = parseInt(digits.slice(-1), 10);
-            const mod = digits.length === 13 ? 11 : 13;
-            const remainder = BigInt(num) % BigInt(mod);
-            const expected = remainder === 10n ? 0 : Number(remainder);
-            return check === expected;
-        }
+    if (window.location.protocol === 'file:') {
+        document.getElementById('fileWarning').style.display = 'block';
+    }
 
-        // --- Поиск сущностей по регулярным выражениям ---
-        function findRegexEntities(text) {
-            const results = [];
-            const patterns = [
-                // Паспорт РФ: 4 цифры, пробел/дефис, 6 цифр
-                { regex: /\b\d{4}[\s-]?\d{6}\b/g, type: 'PASSPORT', score: 1.0 },
-                // СНИЛС: XXX-XXX-XXX YY или XXXXXXXXXXX
-                { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS', score: 1.0 },
-                // ИНН физлица (12 цифр)
-                { regex: /\b\d{12}\b/g, type: 'INN', score: 1.0 },
-                // ОГРН (13 или 15 цифр)
-                { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', score: 1.0 },
-                // Телефон (российский)
-                { regex: /\b(?:\+7|8)[\s-]?(?:\(\d{3}\)|\d{3})[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', score: 1.0 },
-                // Email
-                { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', score: 1.0 }
-            ];
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
 
-            for (const { regex, type, score } of patterns) {
-                let match;
-                while ((match = regex.exec(text)) !== null) {
-                    let word = match[0];
-                    // Валидация для номеров
-                    if (type === 'INN' && !isValidINN(word)) continue;
-                    if (type === 'SNILS' && !isValidSNILS(word)) continue;
-                    if (type === 'OGRN' && !isValidOGRN(word)) continue;
+    // DOM
+    const loadBtn = document.getElementById('loadBtn');
+    const runBtn = document.getElementById('runBtn');
+    const debugToggle = document.getElementById('debugToggle');
+    const textarea = document.getElementById('inputText');
+    const status = document.getElementById('status');
+    const progressBar = document.getElementById('progressBar');
+    const debugPanel = document.getElementById('debugPanel');
+    const nerThreshold = document.getElementById('nerThreshold');
+    const thresholdValue = document.getElementById('thresholdValue');
+    const typeSettings = document.getElementById('typeSettings');
 
-                    results.push({
-                        start: match.index,
-                        end: match.index + word.length,
-                        word,
-                        entity_group: type,
-                        score
-                    });
-                }
-            }
-            return results;
-        }
+    let nerPipeline;
+    let modelLoaded = false;
+    let lastDebug = '';
 
-        // --- Построение интерфейса выбора типов ---
-        function renderTypeSettings() {
-            let html = '';
-            for (const [type, cfg] of Object.entries(entityConfig)) {
-                html += `
-                <div class="setting">
-                    <label>
-                        <input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}>
-                        ${cfg.label} (${type})
-                    </label>
-                </div>`;
-            }
-            typeSettings.innerHTML = html;
+    // Конфигурация типов и их отображение по умолчанию
+    const entityConfig = {
+        PER:        { label: 'ФИО',             enabled: true },
+        ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
+        LOC:        { label: 'МЕСТО',           enabled: false },
+        GPE:        { label: 'ЛОКАЦИЯ',         enabled: false },
+        MISC:       { label: 'ДРУГОЕ',          enabled: false },
+        PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
+        SNILS:      { label: 'СНИЛС',          enabled: true },
+        INN:        { label: 'ИНН',            enabled: true },
+        OGRN:       { label: 'ОГРН',           enabled: true },
+        PHONE:      { label: 'ТЕЛЕФОН',        enabled: true },
+        EMAIL:      { label: 'EMAIL',          enabled: true }
+    };
 
-            // Обновление состояния enabled из чекбоксов
-            document.querySelectorAll('.type-check').forEach(cb => {
-                cb.addEventListener('change', (e) => {
-                    const type = e.target.dataset.type;
-                    entityConfig[type].enabled = e.target.checked;
+    // --- Валидация контрольных сумм ---
+    function isValidINN(inn) {
+        if (!/^\d{12}$/.test(inn)) return false;
+        const d = inn.split('').map(Number);
+        const c1 = [7,2,4,10,3,5,9,4,6,8];
+        const c2 = [3,7,2,4,10,3,5,9,4,6,8];
+        let s1=0, s2=0;
+        for (let i=0; i<10; i++) s1 += c1[i]*d[i];
+        for (let i=0; i<11; i++) s2 += c2[i]*d[i];
+        const k1 = (s1 % 11) % 10;
+        const k2 = (s2 % 11) % 10;
+        return d[10]===k1 && d[11]===k2;
+    }
+
+    function isValidSNILS(snils) {
+        const digits = snils.replace(/[\s-]/g, '');
+        if (!/^\d{11}$/.test(digits)) return false;
+        const nums = digits.split('').map(Number);
+        let sum = 0;
+        for (let i=0; i<9; i++) sum += nums[i]*(9-i);
+        let control = sum % 101;
+        if (control === 100 || control === 101) control = 0;
+        return control === parseInt(digits.slice(9,11), 10);
+    }
+
+    function isValidOGRN(ogrn) {
+        const clean = ogrn.replace(/\D/g, '');
+        if (clean.length !== 13 && clean.length !== 15) return false;
+        const num = BigInt(clean.slice(0, -1));
+        const check = Number(clean.slice(-1));
+        const mod = clean.length === 13 ? 11n : 13n;
+        const remainder = Number(num % mod);
+        const expected = remainder === 10 ? 0 : remainder;
+        return check === expected;
+    }
+
+    // --- Поиск по регулярным выражениям ---
+    function findRegexEntities(text) {
+        const results = [];
+        const patterns = [
+            { regex: /\b\d{4}[\s-]?\d{6}\b/g,                       type: 'PASSPORT', score: 1.0 },
+            { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS',    score: 1.0 },
+            { regex: /\b\d{12}\b/g,                                   type: 'INN',      score: 1.0 },
+            { regex: /\b\d{13}(?:\d{2})?\b/g,                         type: 'OGRN',     score: 1.0 },
+            { regex: /\b(?:\+7|8)[\s-]?(?:\(\d{3}\)|\d{3})[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', score: 1.0 },
+            { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,            type: 'EMAIL',    score: 1.0 }
+        ];
+
+        for (const { regex, type, score } of patterns) {
+            let match;
+            while ((match = regex.exec(text)) !== null) {
+                const word = match[0];
+                if (type === 'INN'   && !isValidINN(word))   continue;
+                if (type === 'SNILS' && !isValidSNILS(word)) continue;
+                if (type === 'OGRN'  && !isValidOGRN(word))  continue;
+                // Паспорт, телефон, email без дополнительной валидации
+                results.push({
+                    start: match.index,
+                    end: match.index + word.length,
+                    word,
+                    entity_group: type,
+                    score
                 });
-            });
+            }
         }
+        return results;
+    }
 
-        // --- Загрузка модели ---
-        loadBtn.addEventListener('click', async () => {
-            loadBtn.disabled = true;
-            loadBtn.textContent = '⏳ Загрузка...';
-            status.textContent = '⏳ Инициализация...';
-            progressBar.className = 'progress-bar';
-            progressBar.style.width = '10%';
+    // --- Агрегация BIO-токенов в сущности ---
+    function aggregateBIO(tokens, text) {
+        const entities = [];
+        let current = null;
 
-            try {
-                const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
-                
-                nerPipeline = await pipeline(
-                    'ner',              // <-- используем пайплайн 'ner'
-                    MODEL_ID,
-                    {
-                        progress_callback: (e) => {
-                            if (e.status === 'download' || e.status === 'progress') {
-                                if (e.total && e.loaded) {
-                                    const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
-                                    progressBar.style.width = `${pct}%`;
-                                    status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
-                                }
-                            } else if (e.status === 'ready') {
-                                progressBar.style.width = '100%';
-                                status.textContent = '✅ Модель загружена!';
-                            }
-                        }
-                    }
-                );
-
-                modelLoaded = true;
-                progressBar.className = 'progress-bar success';
-                progressBar.style.width = '100%';
-                status.textContent = '✅ Модель готова! Выберите типы и нажмите «Анонимизировать»';
-                loadBtn.textContent = '✅ Загружено';
-                loadBtn.style.background = '#10b981';
-                textarea.disabled = false;
-                runBtn.disabled = false;
-                renderTypeSettings();
-            } catch (err) {
-                console.error('Ошибка загрузки:', err);
-                progressBar.className = 'progress-bar error';
-                progressBar.style.width = '100%';
-                status.textContent = `❌ Ошибка: ${err.message}`;
-                loadBtn.disabled = false;
-                loadBtn.textContent = '🔄 Загрузить модель';
+        for (const t of tokens) {
+            const tag = t.entity;              // например "U-LAST_NAME"
+            if (!tag || tag === 'O') {
+                if (current) { entities.push(current); current = null; }
+                continue;
             }
-        });
+            const parts = tag.split('-');
+            const prefix = parts[0];           // B, I, U, L
+            const label = parts.slice(1).join('-'); // LAST_NAME, ORG и т.д.
 
-        // --- Обработка текста (анонимизация) ---
-        runBtn.addEventListener('click', async () => {
-            const text = textarea.value.trim();
-            if (!text) {
-                status.textContent = '⚠️ Введите текст';
-                return;
-            }
-            if (!modelLoaded) {
-                status.textContent = '⚠️ Сначала загрузите модель';
-                return;
+            // Найти позицию токена в тексте
+            const searchStart = current ? current.end : 0;
+            const idx = text.indexOf(t.word, searchStart);
+            if (idx === -1) {
+                if (current) { entities.push(current); current = null; }
+                continue;
             }
 
-            runBtn.disabled = true;
-            status.textContent = '⏳ Анализ...';
-            progressBar.className = 'progress-bar';
-            progressBar.style.width = '20%';
-            debugPanel.classList.remove('show');
-            lastDebug = '';
+            const tokenInfo = {
+                word: t.word,
+                start: idx,
+                end: idx + t.word.length,
+                score: t.score,
+                label
+            };
 
-            try {
-                const threshold = parseFloat(nerThreshold.value);
-                // 1. NER‑сущности
-                const nerResults = await nerPipeline(text, { group_entities: true });
-                lastDebug += `🔍 Сырые NER‑сущности (${nerResults.length}):\n`;
-                lastDebug += JSON.stringify(nerResults.slice(0, 10), null, 2) + '\n\n';
-
-                // Преобразуем NER‑результаты в единый формат
-                const nerMapped = nerResults
-                    .filter(e => e.score >= threshold)
-                    .map(e => ({
-                        start: e.start,
-                        end: e.end,
-                        word: text.slice(e.start, e.end),
-                        entity_group: e.entity_group?.toUpperCase() || 'MISC',
-                        score: e.score
-                    }));
-
-                // 2. Regex‑сущности
-                const regexEntities = findRegexEntities(text);
-                lastDebug += `🔎 Regex‑сущности (${regexEntities.length}):\n`;
-                lastDebug += JSON.stringify(regexEntities.map(e => ({ word: e.word, type: e.entity_group })), null, 2) + '\n\n';
-
-                // 3. Объединяем
-                let allEntities = [...nerMapped, ...regexEntities];
-
-                // 4. Фильтрация по включённым типам
-                allEntities = allEntities.filter(e => {
-                    const type = e.entity_group;
-                    return entityConfig[type] && entityConfig[type].enabled;
-                });
-
-                // 5. Сортировка по началу
-                allEntities.sort((a, b) => a.start - b.start);
-
-                // 6. Разрешение конфликтов (перекрытия)
-                const merged = [];
-                for (const ent of allEntities) {
-                    if (merged.length === 0 || ent.start >= merged[merged.length - 1].end) {
-                        merged.push(ent);
-                    } else {
-                        const prev = merged[merged.length - 1];
-                        // Приоритет: выше score, при равном score — более длинная
-                        if (ent.score > prev.score || (ent.score === prev.score && (ent.end - ent.start) > (prev.end - prev.start))) {
-                            merged[merged.length - 1] = ent;
-                        }
-                    }
+            if (prefix === 'B' || prefix === 'U') {
+                if (current) entities.push(current);
+                current = { ...tokenInfo, type: label };
+                if (prefix === 'U') {
+                    entities.push(current);
+                    current = null;
                 }
-
-                lastDebug += `✅ После фильтрации и слияния: ${merged.length} сущностей\n`;
-                lastDebug += merged.map(e => `  [${e.start}-${e.end}] ${e.word} → ${e.entity_group} (${e.score.toFixed(3)})`).join('\n') + '\n\n';
-
-                // 7. Замена с конца
-                let result = text;
-                const replacements = [];
-                for (let i = merged.length - 1; i >= 0; i--) {
-                    const e = merged[i];
-                    const label = entityConfig[e.entity_group]?.label || e.entity_group;
-                    replacements.push({
-                        start: e.start,
-                        end: e.end,
-                        original: e.word,
-                        label: label,
-                        score: e.score.toFixed(3)
-                    });
-                    result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
-                }
-
-                lastDebug += `📝 Замены (${replacements.length}):\n`;
-                lastDebug += replacements.map(r => `  [${r.start}-${r.end}] "${r.original}" → [${r.label}]`).join('\n') + '\n\n';
-                lastDebug += `📄 Итоговый текст:\n${result}`;
-
-                textarea.value = result;
-                progressBar.className = 'progress-bar success';
-                progressBar.style.width = '100%';
-                status.textContent = `✅ Готово! Заменено ${replacements.length} сущностей.`;
-                if (replacements.length === 0) {
-                    debugPanel.textContent = lastDebug;
-                    debugPanel.classList.add('show');
-                    status.textContent += ' (см. отладку)';
-                }
-            } catch (err) {
-                console.error('Ошибка обработки:', err);
-                progressBar.className = 'progress-bar error';
-                progressBar.style.width = '100%';
-                status.textContent = '❌ Ошибка при анализе текста.';
-                lastDebug += `\n❌ Ошибка: ${err.message}`;
-            } finally {
-                runBtn.disabled = false;
-            }
-        });
-
-        // Слайдер порога
-        nerThreshold.addEventListener('input', () => {
-            thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
-        });
-
-        // Переключение отладки
-        debugToggle.addEventListener('click', () => {
-            if (lastDebug) {
-                debugPanel.textContent = lastDebug;
-                debugPanel.classList.toggle('show');
+            } else if (current && (prefix === 'I' || prefix === 'L')) {
+                // Расширяем текущую сущность
+                current.end = tokenInfo.end;
+                current.word = text.slice(current.start, tokenInfo.end);
+                current.score = Math.min(current.score, tokenInfo.score);
+                // label не меняется, т.к. I-токены того же типа
             } else {
-                debugPanel.textContent = 'Обработайте текст, чтобы увидеть отладку';
-                debugPanel.classList.add('show');
+                // Неожиданный префикс — закрываем предыдущую
+                if (current) { entities.push(current); current = null; }
             }
-        });
+        }
+        if (current) entities.push(current);
+        return entities;
+    }
 
-        // Инициализация
-        renderTypeSettings();
+    // Преобразование BIO-меток в типы для entityConfig
+    const bioToGroup = {
+        LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
+        PERSON: 'PER',
+        ORG: 'ORG', ORGANIZATION: 'ORG',
+        LOC: 'LOC', GPE: 'GPE',   // GPE оставляем как GPE, можно будет отключить отдельно
+        MISC: 'MISC'
+    };
+
+    // --- Построение чекбоксов ---
+    function renderTypeSettings() {
+        let html = '';
+        for (const [type, cfg] of Object.entries(entityConfig)) {
+            html += `
+            <div class="setting">
+                <label>
+                    <input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}>
+                    ${cfg.label} (${type})
+                </label>
+            </div>`;
+        }
+        typeSettings.innerHTML = html;
+        document.querySelectorAll('.type-check').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const type = e.target.dataset.type;
+                entityConfig[type].enabled = e.target.checked;
+            });
+        });
+    }
+
+    // --- Загрузка модели ---
+    loadBtn.addEventListener('click', async () => {
+        loadBtn.disabled = true;
+        loadBtn.textContent = '⏳ Загрузка...';
+        status.textContent = '⏳ Инициализация...';
+        progressBar.className = 'progress-bar';
+        progressBar.style.width = '10%';
+
+        try {
+            const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
+            nerPipeline = await pipeline(
+                'ner',                // Оставляем 'ner', но агрегируем вручную
+                MODEL_ID,
+                {
+                    progress_callback: (e) => {
+                        if (e.status === 'download' || e.status === 'progress') {
+                            if (e.total && e.loaded) {
+                                const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
+                                progressBar.style.width = `${pct}%`;
+                                status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
+                            }
+                        } else if (e.status === 'ready') {
+                            progressBar.style.width = '100%';
+                            status.textContent = '✅ Модель загружена!';
+                        }
+                    }
+                }
+            );
+
+            modelLoaded = true;
+            progressBar.className = 'progress-bar success';
+            progressBar.style.width = '100%';
+            status.textContent = '✅ Модель готова! Выберите типы и нажмите «Анонимизировать»';
+            loadBtn.textContent = '✅ Загружено';
+            loadBtn.style.background = '#10b981';
+            textarea.disabled = false;
+            runBtn.disabled = false;
+            renderTypeSettings();
+        } catch (err) {
+            console.error(err);
+            progressBar.className = 'progress-bar error';
+            progressBar.style.width = '100%';
+            status.textContent = `❌ Ошибка: ${err.message}`;
+            loadBtn.disabled = false;
+            loadBtn.textContent = '🔄 Загрузить модель';
+        }
+    });
+
+    // --- Анонимизация ---
+    runBtn.addEventListener('click', async () => {
+        const text = textarea.value.trim();
+        if (!text) { status.textContent = '⚠️ Введите текст'; return; }
+        if (!modelLoaded) { status.textContent = '⚠️ Сначала загрузите модель'; return; }
+
+        runBtn.disabled = true;
+        status.textContent = '⏳ Анализ...';
+        progressBar.className = 'progress-bar';
+        progressBar.style.width = '20%';
+        debugPanel.classList.remove('show');
+        lastDebug = '';
+
+        try {
+            const threshold = parseFloat(nerThreshold.value);
+
+            // 1. Сырые токены NER
+            const rawTokens = await nerPipeline(text, { group_entities: true }); // group_entities всё равно не сработает, но получим токены
+            lastDebug += `🔍 Сырые NER‑токены (${rawTokens.length}):\n${JSON.stringify(rawTokens, null, 2)}\n\n`;
+
+            // 2. Ручная агрегация
+            const nerAggregated = aggregateBIO(rawTokens, text);
+            lastDebug += `🧩 Агрегированные NER‑сущности (${nerAggregated.length}):\n${JSON.stringify(nerAggregated, null, 2)}\n\n`;
+
+            // 3. Regex‑сущности
+            const regexEntities = findRegexEntities(text);
+            lastDebug += `🔎 Regex‑сущности (${regexEntities.length}):\n${JSON.stringify(regexEntities.map(e => ({word:e.word, type:e.entity_group})), null, 2)}\n\n`;
+
+            // 4. Преобразуем NER в единый формат
+            const nerMapped = nerAggregated
+                .filter(e => e.score >= threshold)
+                .map(e => ({
+                    start: e.start,
+                    end: e.end,
+                    word: e.word,
+                    entity_group: bioToGroup[e.type] || e.type || 'MISC',
+                    score: e.score
+                }));
+
+            // 5. Объединяем с regex
+            let allEntities = [...nerMapped, ...regexEntities];
+
+            // 6. Фильтр по включённым типам
+            allEntities = allEntities.filter(e => entityConfig[e.entity_group]?.enabled);
+
+            // 7. Сортировка и разрешение перекрытий (приоритет: выше score, при равном – более длинная)
+            allEntities.sort((a, b) => a.start - b.start);
+            const merged = [];
+            for (const ent of allEntities) {
+                if (merged.length === 0 || ent.start >= merged[merged.length - 1].end) {
+                    merged.push(ent);
+                } else {
+                    const prev = merged[merged.length - 1];
+                    if (ent.score > prev.score || (ent.score === prev.score && (ent.end - ent.start) > (prev.end - prev.start))) {
+                        merged[merged.length - 1] = ent;
+                    }
+                }
+            }
+            lastDebug += `✅ После фильтрации и слияния: ${merged.length} сущностей\n`;
+            lastDebug += merged.map(e => `  [${e.start}-${e.end}] ${e.word} → ${e.entity_group} (${e.score.toFixed(3)})`).join('\n') + '\n\n';
+
+            // 8. Замена с конца
+            let result = text;
+            const replacements = [];
+            for (let i = merged.length - 1; i >= 0; i--) {
+                const e = merged[i];
+                const label = entityConfig[e.entity_group]?.label || e.entity_group;
+                replacements.push({
+                    start: e.start,
+                    end: e.end,
+                    original: e.word,
+                    label,
+                    score: e.score.toFixed(3)
+                });
+                result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
+            }
+            lastDebug += `📝 Замены (${replacements.length}):\n`;
+            lastDebug += replacements.map(r => `  [${r.start}-${r.end}] "${r.original}" → [${r.label}]`).join('\n') + '\n\n';
+            lastDebug += `📄 Итоговый текст:\n${result}`;
+
+            textarea.value = result;
+            progressBar.className = 'progress-bar success';
+            progressBar.style.width = '100%';
+            status.textContent = `✅ Готово! Заменено ${replacements.length} сущностей.`;
+            if (replacements.length === 0) {
+                debugPanel.textContent = lastDebug;
+                debugPanel.classList.add('show');
+                status.textContent += ' (см. отладку)';
+            }
+        } catch (err) {
+            console.error(err);
+            progressBar.className = 'progress-bar error';
+            progressBar.style.width = '100%';
+            status.textContent = '❌ Ошибка при анализе.';
+            lastDebug += `\n❌ Ошибка: ${err.message}`;
+        } finally {
+            runBtn.disabled = false;
+        }
+    });
+
+    // Порог
+    nerThreshold.addEventListener('input', () => {
         thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
-    </script>
+    });
+
+    // Отладка
+    debugToggle.addEventListener('click', () => {
+        if (lastDebug) {
+            debugPanel.textContent = lastDebug;
+            debugPanel.classList.toggle('show');
+        } else {
+            debugPanel.textContent = 'Обработайте текст, чтобы увидеть отладку';
+            debugPanel.classList.add('show');
+        }
+    });
+
+    // Инициализация интерфейса
+    renderTypeSettings();
+    thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
+</script>
 </body>
 </html>
