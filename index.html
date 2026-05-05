@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Gherman BERT ONNX - Fixed)</title>
+    <title>Анонимизатор (Gherman BERT - Fixed Mapping)</title>
     <style>
         :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --card: #fff; }
         body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
@@ -30,15 +30,15 @@
 </head>
 <body>
     <div class="card">
-        <h1>🔒 Анонимизация (Gherman BERT ONNX)</h1>
+        <h1>🔒 Анонимизация (Gherman BERT + Org Regex)</h1>
         <div id="fileWarning" class="warning">⚠️ Запустите через: <code>python -m http.server 8000</code></div>
 
         <div class="rules-panel" id="rulesPanel">
             <strong>Типы сущностей:</strong><br>
-            <label><input type="checkbox" checked data-rule="PER"> 👤 ФИО</label>
-            <label><input type="checkbox" checked data-rule="LOC"> 📍 Локации</label>
-            <label><input type="checkbox" checked data-rule="ORG"> 🏢 Организации</label>
-            <label><input type="checkbox" checked data-rule="struct"> 🔢 Структурированные</label>
+            <label><input type="checkbox" checked data-rule="PER"> 👤 ФИО (Модель)</label>
+            <label><input type="checkbox" checked data-rule="LOC"> 📍 Локации (Модель)</label>
+            <label><input type="checkbox" checked data-rule="ORG"> 🏢 Организации (Regex)</label>
+            <label><input type="checkbox" checked data-rule="struct"> 🔢 Документы (Regex)</label>
         </div>
 
         <div class="btn-group">
@@ -52,8 +52,7 @@
         <textarea id="inputText" disabled placeholder="Вставьте текст...">Иванов Иван Петрович из Москвы работает в ООО Яндекс.</textarea>
         <div class="debug" id="debugPanel"></div>
         <div class="hint">
-            <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code>.<br>
-            Исправлен маппинг типов сущностей.
+            <strong>Важно:</strong> Модель Gherman не распознаёт организации. Для них используется встроенный поиск по ключевым словам (ООО, ЗАО и т.д.).
         </div>
     </div>
 
@@ -63,17 +62,25 @@
             nerThreshold: 0.5,
             chunkSize: 450,
             overlap: 60,
-            // Расширенный маппинг: ловим и B-PER, и PER, и person
+            // Маппинг очищенных тегов (без B-, I-) в наши метки
             labels: {
-                'LAST_NAME': 'ФАМИЛИЯ', 'FIRST_NAME': 'ИМЯ', 'MIDDLE_NAME': 'ОТЧЕСТВО',
-                'PER': 'ФИО', 'PERSON': 'ФИО', 'person': 'ФИО',
-                'CITY': 'ГОРОД', 'STREET': 'УЛИЦА', 'HOUSE': 'ДОМ',
-                'REGION': 'РЕГИОН', 'COUNTRY': 'СТРАНА',
-                'LOC': 'МЕСТО', 'LOCATION': 'МЕСТО', 'location': 'МЕСТО',
-                'ORG': 'ОРГАНИЗАЦИЯ', 'ORGANIZATION': 'ОРГАНИЗАЦИЯ', 'organization': 'ОРГАНИЗАЦИЯ',
+                // Person
+                'LAST_NAME': 'ФАМИЛИЯ',
+                'FIRST_NAME': 'ИМЯ',
+                'MIDDLE_NAME': 'ОТЧЕСТВО',
+                // Location
+                'COUNTRY': 'СТРАНА',
+                'REGION': 'РЕГИОН',
+                'CITY': 'ГОРОД',
+                'DISTRICT': 'РАЙОН',
+                'STREET': 'УЛИЦА',
+                'HOUSE': 'ДОМ',
+                // Misc
                 'MISC': 'ДРУГОЕ'
             },
-            structPatterns: [
+            // Паттерны для того, что модель НЕ умеет (Организации + Документы)
+            fallbackPatterns: [
+                { id: 'ORG', label: 'ОРГАНИЗАЦИЯ', pattern: /\b(?:ООО|ЗАО|ОАО|ПАО|ИП|АО|НКО|ФГУП)\s*[«"]?[А-ЯЁ][А-ЯЁа-яё\s\-\.,&«»"'#№]{2,60}[»"]?/gi },
                 { id: 'PASSPORT', label: 'ПАСПОРТ', pattern: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi },
                 { id: 'INN', label: 'ИНН', pattern: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi },
                 { id: 'OGRN', label: 'ОГРН', pattern: /(?:ОГРН[ИП]?\s*:?\s*)?\d{13,15}\b/gi },
@@ -141,8 +148,8 @@
                 const allEntities = [];
                 let rawSampleLogged = false;
 
-                // 1. NER
-                if ((types.has('PER') || types.has('LOC') || types.has('ORG')) && pipe) {
+                // 1. NER (Модель Gherman: только PER и LOC)
+                if ((types.has('PER') || types.has('LOC')) && pipe) {
                     const { chunkSize, overlap } = CONFIG;
                     const chunks = [];
                     for (let i = 0; i < text.length; i += chunkSize - overlap) {
@@ -153,34 +160,31 @@
                         progressBar.style.width = `${5 + Math.round(((i + 1) / chunks.length) * 40)}%`;
                         const res = await pipe(chunks[i].text, { aggregation_strategy: 'simple' });
                         
-                        // Логируем первый ответ для отладки
                         if (!rawSampleLogged && res.length > 0) {
                             lastDebug += `🔎 Сырой вывод модели (пример):\n`;
                             res.slice(0, 3).forEach(e => {
-                                lastDebug += `  Type: "${e.entity_group}" | Word: "${e.word}" | Score: ${e.score.toFixed(2)}\n`;
+                                lastDebug += `  Entity: "${e.entity_group}" | Word: "${e.word}"\n`;
                             });
                             lastDebug += '\n';
                             rawSampleLogged = true;
                         }
 
                         for (const e of res) {
-                            // Получаем тип сущности
-                            const rawType = e.entity_group || e.entity || '';
+                            // Модель возвращает теги вида B-LAST_NAME, I-CITY и т.д.
+                            // aggregation_strategy: 'simple' обычно возвращает уже собранный тип, например LAST_NAME или CITY
+                            // Но на всякий случай чистим префиксы
+                            let rawType = e.entity_group || e.entity || '';
+                            let cleanType = rawType.replace(/^[BIUL]-/, '');
                             
-                            // Пытаемся найти метку в конфиге
-                            // Если точного совпадения нет, пробуем убрать префиксы B-, I-, U-, L-
-                            let label = CONFIG.labels[rawType];
-                            if (!label) {
-                                const cleanType = rawType.replace(/^[BIUL]-/, '');
-                                label = CONFIG.labels[cleanType];
-                            }
+                            const label = CONFIG.labels[cleanType];
+                            if (!label) continue;
 
-                            if (!label) continue; // Пропускаем, если тип неизвестен
-
-                            // Фильтр по включенным чекбоксам
-                            if (['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО', 'ФИО'].includes(label) && !types.has('PER')) continue;
-                            if (['ГОРОД', 'УЛИЦА', 'ДОМ', 'РЕГИОН', 'СТРАНА', 'МЕСТО'].includes(label) && !types.has('LOC')) continue;
-                            if (label === 'ОРГАНИЗАЦИЯ' && !types.has('ORG')) continue;
+                            // Фильтр по чекбоксам
+                            const isPer = ['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО'].includes(label);
+                            const isLoc = ['ГОРОД', 'УЛИЦА', 'ДОМ', 'РЕГИОН', 'СТРАНА', 'РАЙОН'].includes(label);
+                            
+                            if (isPer && !types.has('PER')) continue;
+                            if (isLoc && !types.has('LOC')) continue;
 
                             if (e.score >= CONFIG.nerThreshold && typeof e.start === 'number') {
                                 allEntities.push({
@@ -188,17 +192,20 @@
                                     end: e.end + chunks[i].offset,
                                     type: label, score: e.score, 
                                     text: text.slice(e.start + chunks[i].offset, e.end + chunks[i].offset),
-                                    source: 'ner',
-                                    rawType: rawType
+                                    source: 'ner'
                                 });
                             }
                         }
                     }
                 }
 
-                // 2. Regex
-                if (types.has('struct')) {
-                    for (const rule of CONFIG.structPatterns) {
+                // 2. Fallback Patterns (Организации и Документы)
+                if (types.has('ORG') || types.has('struct')) {
+                    for (const rule of CONFIG.fallbackPatterns) {
+                        // Пропускаем, если тип отключен
+                        if (rule.id === 'ORG' && !types.has('ORG')) continue;
+                        if (['PASSPORT','INN','OGRN','SNILS'].includes(rule.id) && !types.has('struct')) continue;
+
                         rule.pattern.lastIndex = 0;
                         for (const m of text.matchAll(rule.pattern)) {
                             allEntities.push({
@@ -209,18 +216,19 @@
                     }
                 }
 
-                // 3. Слияние ФИО
+                // 3. Слияние ФИО (склеиваем Фамилию+Имя+Отчество)
                 allEntities.sort((a, b) => a.start - b.start);
                 const merged = [];
                 for (const ent of allEntities) {
-                    const isPer = ['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО', 'ФИО'].includes(ent.type);
-                    const lastIsPer = merged.length && ['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО', 'ФИО'].includes(merged[merged.length-1].type);
+                    const isPerPart = ['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО'].includes(ent.type);
+                    const lastIsPerPart = merged.length && ['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО', 'ФИО'].includes(merged[merged.length-1].type);
                     
-                    if (merged.length && ent.start <= merged[merged.length - 1].end + 2 && isPer && lastIsPer) {
+                    // Если это часть ФИО и идет сразу за предыдущей частью ФИО (с пробелом)
+                    if (merged.length && ent.start <= merged[merged.length - 1].end + 2 && isPerPart && lastIsPerPart) {
                         const last = merged[merged.length - 1];
                         last.end = Math.max(last.end, ent.end);
                         last.text = text.slice(last.start, last.end);
-                        last.type = 'ФИО';
+                        last.type = 'ФИО'; // Объединяем в общий тег
                         last.score = Math.max(last.score, ent.score);
                     } else if (!merged.length || ent.start > merged[merged.length - 1].end) {
                         merged.push(ent);
@@ -231,7 +239,7 @@
 
                 // Лог
                 lastDebug += `🔍 Найдено сущностей: ${merged.length}\n`;
-                lastDebug += merged.map((e, i) => `#${i+1} [${e.source}] ${e.type} (raw:${e.rawType||'-'}) "${e.text}" (${e.start}-${e.end})`).join('\n') + '\n\n';
+                lastDebug += merged.map((e, i) => `#${i+1} [${e.source}] ${e.type} "${e.text}" (${e.start}-${e.end})`).join('\n') + '\n\n';
 
                 // 4. Замена
                 let result = text;
