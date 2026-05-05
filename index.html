@@ -3,33 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (исправленная версия)</title>
+    <title>Анонимизатор (улучшенная версия)</title>
     <style>
-        :root { --primary: #2563eb; --success: #10b981; --error: #ef4444; --bg: #f8fafc; --card: #ffffff; }
-        body { font-family: system-ui, -apple-system, sans-serif; max-width: 850px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
-        .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-        textarea { width: 100%; height: 200px; margin: 1rem 0; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; resize: vertical; background: #f8fafc; font-family: monospace; }
-        textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
-        .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; margin: 0.5rem 0; }
-        button { padding: 0.6rem 1.2rem; font-size: 14px; font-weight: 500; cursor: pointer; border: none; border-radius: 6px; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        :root {
+            --primary: #2563eb;
+            --success: #10b981;
+            --error: #ef4444;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --muted: #64748b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 950px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            background: var(--bg);
+            color: var(--text);
+        }
+        .card {
+            background: var(--card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-bottom: 1.5rem;
+        }
+        h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin: 1rem 0;
+            padding: 0.8rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 15px;
+            resize: vertical;
+            background: #f8fafc;
+            font-family: monospace;
+        }
+        textarea:disabled {
+            background: #e2e8f0;
+            cursor: not-allowed;
+        }
+        .btn-group {
+            display: flex;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+            margin: 0.5rem 0;
+        }
+        button {
+            padding: 0.6rem 1.2rem;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            transition: opacity 0.2s;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
         #loadBtn { background: var(--primary); color: white; }
         #runBtn { background: var(--success); color: white; }
-        #status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
-        .progress { width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin: 0.5rem 0; }
-        .progress-bar { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s; }
+        #debugToggle { background: #64748b; color: white; }
+        .progress {
+            width: 100%;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 0.5rem 0;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
         .progress-bar.success { background: var(--success); }
         .progress-bar.error { background: var(--error); }
-        .hint { font-size: 0.85rem; color: #64748b; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
-        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; display: none; }
-        .debug { font-size: 0.8rem; color: #64748b; margin-top: 0.5rem; font-family: monospace; white-space: pre-wrap; max-height: 200px; overflow-y: auto; display: none; }
+        .status {
+            margin: 0.5rem 0;
+            font-weight: 500;
+            min-height: 1.2rem;
+        }
+        .hint {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 0.8rem;
+            border-radius: 0 6px 6px 0;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .debug {
+            font-size: 0.8rem;
+            color: #334155;
+            margin-top: 0.5rem;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 250px;
+            overflow-y: auto;
+            background: #f1f5f9;
+            padding: 0.8rem;
+            border-radius: 6px;
+            display: none;
+        }
         .debug.show { display: block; }
+        .settings {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.5rem 1rem;
+            margin: 1rem 0;
+        }
+        .setting label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0.5rem 0;
+        }
+        input[type="range"] { width: 150px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>🔒 Анонимизация текстов</h1>
-        
+        <h1>🔒 Анонимизация текстов (улучшенная версия)</h1>
+
         <div id="fileWarning" class="warning">
             ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
         </div>
@@ -39,17 +155,28 @@
             <button id="runBtn" disabled>🔒 Анонимизировать</button>
             <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
         </div>
-        
-        <div id="status">Нажмите "Загрузить модель"</div>
+
+        <div id="status" class="status">Нажмите «Загрузить модель»</div>
         <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-        
-        <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО Яндекс. Телефон: +7 (999) 123-45-67</textarea>
-        
+
+        <div class="settings" id="typeSettings">
+            <!-- Заполняется динамически после загрузки модели -->
+        </div>
+
+        <div class="slider-container">
+            <label for="nerThreshold">Порог уверенности NER:</label>
+            <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
+            <span id="thresholdValue">0.70</span>
+        </div>
+
+        <textarea id="inputText" disabled placeholder="Введите текст для анонимизации...">Иванов Иван Петрович работает в ООО Яндекс. Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195. Телефон: +7 (999) 123-45-67</textarea>
+
         <div class="debug" id="debugPanel"></div>
-        
+
         <div class="hint">
-            <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
-            <strong>Приватность:</strong> Все вычисления локально
+            <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER-пайплайн)<br>
+            <strong>Регулярные выражения:</strong> паспорт, СНИЛС, ИНН, ОГРН, телефон, email<br>
+            <strong>Приватность:</strong> всё обрабатывается локально
         </div>
     </div>
 
@@ -63,6 +190,7 @@
         env.allowLocalModels = false;
         env.useBrowserCache = true;
 
+        // DOM элементы
         const loadBtn = document.getElementById('loadBtn');
         const runBtn = document.getElementById('runBtn');
         const debugToggle = document.getElementById('debugToggle');
@@ -70,10 +198,129 @@
         const status = document.getElementById('status');
         const progressBar = document.getElementById('progressBar');
         const debugPanel = document.getElementById('debugPanel');
+        const nerThreshold = document.getElementById('nerThreshold');
+        const thresholdValue = document.getElementById('thresholdValue');
+        const typeSettings = document.getElementById('typeSettings');
 
-        let pipe;
+        let nerPipeline;
         let modelLoaded = false;
         let lastDebug = '';
+
+        // Типы сущностей и их метки по умолчанию
+        const entityConfig = {
+            PER: { label: 'ФИО', enabled: true },
+            ORG: { label: 'ОРГАНИЗАЦИЯ', enabled: true },
+            LOC: { label: 'МЕСТО', enabled: false },
+            GPE: { label: 'ЛОКАЦИЯ', enabled: false },
+            MISC: { label: 'ДРУГОЕ', enabled: false },
+            // Regex-типы
+            PASSPORT: { label: 'ПАСПОРТ', enabled: true },
+            SNILS: { label: 'СНИЛС', enabled: true },
+            INN: { label: 'ИНН', enabled: true },
+            OGRN: { label: 'ОГРН', enabled: true },
+            PHONE: { label: 'ТЕЛЕФОН', enabled: true },
+            EMAIL: { label: 'EMAIL', enabled: true }
+        };
+
+        // --- Вспомогательные функции для валидации ---
+        function isValidINN(inn) {
+            if (!/^\d{12}$/.test(inn)) return false;
+            const digits = inn.split('').map(Number);
+            // ИНН физлица: n10 = (2*n1+4*n2+10*n3+3*n4+5*n5+9*n6+4*n7+6*n8+8*n9+0*n10) mod 11 mod 10
+            const coeff1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
+            const coeff2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
+            let sum1 = 0, sum2 = 0;
+            for (let i = 0; i < 10; i++) sum1 += coeff1[i] * digits[i];
+            for (let i = 0; i < 11; i++) sum2 += coeff2[i] * digits[i];
+            const check1 = (sum1 % 11) % 10;
+            const check2 = (sum2 % 11) % 10;
+            return digits[10] === check1 && digits[11] === check2;
+        }
+
+        function isValidSNILS(snils) {
+            // Ожидаемый формат: 11 цифр (может быть с дефисами/пробелами)
+            const digits = snils.replace(/[\s-]/g, '');
+            if (!/^\d{11}$/.test(digits)) return false;
+            const nums = digits.split('').map(Number);
+            let sum = 0;
+            for (let i = 0; i < 9; i++) sum += nums[i] * (9 - i);
+            let control = sum % 101;
+            if (control === 100 || control === 101) control = 0;
+            return control === parseInt(digits.slice(9, 11), 10);
+        }
+
+        function isValidOGRN(ogrn) {
+            const digits = ogrn.replace(/\D/g, '');
+            if (digits.length !== 13 && digits.length !== 15) return false;
+            const num = digits.slice(0, -1);
+            const check = parseInt(digits.slice(-1), 10);
+            const mod = digits.length === 13 ? 11 : 13;
+            const remainder = BigInt(num) % BigInt(mod);
+            const expected = remainder === 10n ? 0 : Number(remainder);
+            return check === expected;
+        }
+
+        // --- Поиск сущностей по регулярным выражениям ---
+        function findRegexEntities(text) {
+            const results = [];
+            const patterns = [
+                // Паспорт РФ: 4 цифры, пробел/дефис, 6 цифр
+                { regex: /\b\d{4}[\s-]?\d{6}\b/g, type: 'PASSPORT', score: 1.0 },
+                // СНИЛС: XXX-XXX-XXX YY или XXXXXXXXXXX
+                { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS', score: 1.0 },
+                // ИНН физлица (12 цифр)
+                { regex: /\b\d{12}\b/g, type: 'INN', score: 1.0 },
+                // ОГРН (13 или 15 цифр)
+                { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', score: 1.0 },
+                // Телефон (российский)
+                { regex: /\b(?:\+7|8)[\s-]?(?:\(\d{3}\)|\d{3})[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', score: 1.0 },
+                // Email
+                { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', score: 1.0 }
+            ];
+
+            for (const { regex, type, score } of patterns) {
+                let match;
+                while ((match = regex.exec(text)) !== null) {
+                    let word = match[0];
+                    // Валидация для номеров
+                    if (type === 'INN' && !isValidINN(word)) continue;
+                    if (type === 'SNILS' && !isValidSNILS(word)) continue;
+                    if (type === 'OGRN' && !isValidOGRN(word)) continue;
+
+                    results.push({
+                        start: match.index,
+                        end: match.index + word.length,
+                        word,
+                        entity_group: type,
+                        score
+                    });
+                }
+            }
+            return results;
+        }
+
+        // --- Построение интерфейса выбора типов ---
+        function renderTypeSettings() {
+            let html = '';
+            for (const [type, cfg] of Object.entries(entityConfig)) {
+                html += `
+                <div class="setting">
+                    <label>
+                        <input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}>
+                        ${cfg.label} (${type})
+                    </label>
+                </div>`;
+            }
+            typeSettings.innerHTML = html;
+
+            // Обновление состояния enabled из чекбоксов
+            document.querySelectorAll('.type-check').forEach(cb => {
+                cb.addEventListener('change', (e) => {
+                    const type = e.target.dataset.type;
+                    entityConfig[type].enabled = e.target.checked;
+                });
+            });
+        }
 
         // --- Загрузка модели ---
         loadBtn.addEventListener('click', async () => {
@@ -86,8 +333,8 @@
             try {
                 const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
                 
-                pipe = await pipeline(
-                    'token-classification',
+                nerPipeline = await pipeline(
+                    'ner',              // <-- используем пайплайн 'ner'
                     MODEL_ID,
                     {
                         progress_callback: (e) => {
@@ -108,12 +355,12 @@
                 modelLoaded = true;
                 progressBar.className = 'progress-bar success';
                 progressBar.style.width = '100%';
-                status.textContent = '✅ Модель готова!';
+                status.textContent = '✅ Модель готова! Выберите типы и нажмите «Анонимизировать»';
                 loadBtn.textContent = '✅ Загружено';
                 loadBtn.style.background = '#10b981';
                 textarea.disabled = false;
                 runBtn.disabled = false;
-                
+                renderTypeSettings();
             } catch (err) {
                 console.error('Ошибка загрузки:', err);
                 progressBar.className = 'progress-bar error';
@@ -124,11 +371,15 @@
             }
         });
 
-        // --- Обработка текста ---
+        // --- Обработка текста (анонимизация) ---
         runBtn.addEventListener('click', async () => {
             const text = textarea.value.trim();
             if (!text) {
                 status.textContent = '⚠️ Введите текст';
+                return;
+            }
+            if (!modelLoaded) {
+                status.textContent = '⚠️ Сначала загрузите модель';
                 return;
             }
 
@@ -140,91 +391,100 @@
             lastDebug = '';
 
             try {
-                // ✅ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: aggregation_strategy: 'simple'
-                // Возвращает сущности с корректными start/end в символах
-                const results = await pipe(text, { 
-                    aggregation_strategy: 'simple' 
+                const threshold = parseFloat(nerThreshold.value);
+                // 1. NER‑сущности
+                const nerResults = await nerPipeline(text, { group_entities: true });
+                lastDebug += `🔍 Сырые NER‑сущности (${nerResults.length}):\n`;
+                lastDebug += JSON.stringify(nerResults.slice(0, 10), null, 2) + '\n\n';
+
+                // Преобразуем NER‑результаты в единый формат
+                const nerMapped = nerResults
+                    .filter(e => e.score >= threshold)
+                    .map(e => ({
+                        start: e.start,
+                        end: e.end,
+                        word: text.slice(e.start, e.end),
+                        entity_group: e.entity_group?.toUpperCase() || 'MISC',
+                        score: e.score
+                    }));
+
+                // 2. Regex‑сущности
+                const regexEntities = findRegexEntities(text);
+                lastDebug += `🔎 Regex‑сущности (${regexEntities.length}):\n`;
+                lastDebug += JSON.stringify(regexEntities.map(e => ({ word: e.word, type: e.entity_group })), null, 2) + '\n\n';
+
+                // 3. Объединяем
+                let allEntities = [...nerMapped, ...regexEntities];
+
+                // 4. Фильтрация по включённым типам
+                allEntities = allEntities.filter(e => {
+                    const type = e.entity_group;
+                    return entityConfig[type] && entityConfig[type].enabled;
                 });
-                
-                // Логируем сырые данные
-                lastDebug = `🔍 Сырые результаты модели:\n${JSON.stringify(results.slice(0, 5), null, 2)}\n\n`;
-                
-                // Фильтрация и маппинг типов
-                const THRESHOLD = 0.3;
-                const labels = { 
-                    PER: 'ФИО', PERSON: 'ФИО', 
-                    LAST_NAME: 'ФАМИЛИЯ', FIRST_NAME: 'ИМЯ', MIDDLE_NAME: 'ОТЧЕСТВО',
-                    ORG: 'ОРГАНИЗАЦИЯ', ORGANIZATION: 'ОРГАНИЗАЦИЯ',
-                    LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ'
-                };
-                
-                let result = text;
-                const replacements = [];
-                
-                // Фильтруем и сортируем
-                const valid = results
-                    .filter(e => e.score >= THRESHOLD)
-                    .sort((a, b) => a.start - b.start);
-                
-                // Убираем перекрытия
+
+                // 5. Сортировка по началу
+                allEntities.sort((a, b) => a.start - b.start);
+
+                // 6. Разрешение конфликтов (перекрытия)
                 const merged = [];
-                for (const e of valid) {
-                    if (!merged.length || e.start >= merged[merged.length-1].end) {
-                        merged.push(e);
-                    } else if (e.score > merged[merged.length-1].score) {
-                        merged[merged.length-1] = e;
+                for (const ent of allEntities) {
+                    if (merged.length === 0 || ent.start >= merged[merged.length - 1].end) {
+                        merged.push(ent);
+                    } else {
+                        const prev = merged[merged.length - 1];
+                        // Приоритет: выше score, при равном score — более длинная
+                        if (ent.score > prev.score || (ent.score === prev.score && (ent.end - ent.start) > (prev.end - prev.start))) {
+                            merged[merged.length - 1] = ent;
+                        }
                     }
                 }
-                
-                lastDebug += `✅ После фильтрации и слияния: ${merged.length} сущностей\n\n`;
-                
-                // Замена с конца (чтобы индексы не сбились)
+
+                lastDebug += `✅ После фильтрации и слияния: ${merged.length} сущностей\n`;
+                lastDebug += merged.map(e => `  [${e.start}-${e.end}] ${e.word} → ${e.entity_group} (${e.score.toFixed(3)})`).join('\n') + '\n\n';
+
+                // 7. Замена с конца
+                let result = text;
+                const replacements = [];
                 for (let i = merged.length - 1; i >= 0; i--) {
                     const e = merged[i];
-                    const label = labels[e.entity_group] || e.entity_group?.toUpperCase() || 'СУЩНОСТЬ';
-                    
-                    // ✅ ЗАЩИТА: проверяем, что индексы валидны
-                    if (typeof e.start !== 'number' || typeof e.end !== 'number' || e.start < 0 || e.end > text.length) {
-                        lastDebug += `⚠️ Пропущена сущность с невалидными индексами: ${JSON.stringify(e)}\n`;
-                        continue;
-                    }
-                    
-                    const original = text.slice(e.start, e.end);
+                    const label = entityConfig[e.entity_group]?.label || e.entity_group;
                     replacements.push({
                         start: e.start,
                         end: e.end,
-                        original: original,
+                        original: e.word,
                         label: label,
                         score: e.score.toFixed(3)
                     });
-                    
                     result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
                 }
-                
-                lastDebug += `📝 Замены:\n${replacements.map(r => `  [${r.start}-${r.end}] "${r.original}" → [${r.label}]`).join('\n')}\n\n`;
+
+                lastDebug += `📝 Замены (${replacements.length}):\n`;
+                lastDebug += replacements.map(r => `  [${r.start}-${r.end}] "${r.original}" → [${r.label}]`).join('\n') + '\n\n';
                 lastDebug += `📄 Итоговый текст:\n${result}`;
-                
-                // Обновляем textarea
+
                 textarea.value = result;
                 progressBar.className = 'progress-bar success';
                 progressBar.style.width = '100%';
                 status.textContent = `✅ Готово! Заменено ${replacements.length} сущностей.`;
-                
-                // Показываем отладку если замен мало или нет
                 if (replacements.length === 0) {
                     debugPanel.textContent = lastDebug;
                     debugPanel.classList.add('show');
                     status.textContent += ' (см. отладку)';
                 }
-                
             } catch (err) {
                 console.error('Ошибка обработки:', err);
                 progressBar.className = 'progress-bar error';
                 progressBar.style.width = '100%';
-                status.textContent = '❌ Ошибка при анализе.';
+                status.textContent = '❌ Ошибка при анализе текста.';
+                lastDebug += `\n❌ Ошибка: ${err.message}`;
             } finally {
                 runBtn.disabled = false;
             }
+        });
+
+        // Слайдер порога
+        nerThreshold.addEventListener('input', () => {
+            thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
         });
 
         // Переключение отладки
@@ -237,6 +497,10 @@
                 debugPanel.classList.add('show');
             }
         });
+
+        // Инициализация
+        renderTypeSettings();
+        thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
     </script>
 </body>
 </html>
