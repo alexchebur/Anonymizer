@@ -3,192 +3,251 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Pyodide + JS Hybrid)</title>
+    <title>Анонимизатор (Gherman BERT NER)</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
-        textarea { width: 100%; height: 300px; margin-bottom: 1em; padding: 0.5em; box-sizing: border-box; font-family: monospace; }
-        button { padding: 0.5em 2em; font-size: 1em; cursor: pointer; margin-right: 0.5em; }
+        :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --card: #fff; }
+        body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
+        .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        textarea { width: 100%; height: 280px; margin: 1rem 0; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; resize: vertical; background: #f8fafc; font-family: monospace; }
+        textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
+        .btn-group { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 0.5rem 0; }
+        button { padding: 0.6rem 1rem; font-size: 14px; font-weight: 500; cursor: pointer; border: none; border-radius: 6px; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        #status { margin: 1em 0; color: #555; min-height: 1.2em; }
-        .note { font-size: 0.9em; color: #777; margin-top: 2em; border-top: 1px solid #eee; padding-top: 1em; }
-        .progress { width: 100%; height: 4px; background: #e0e0e0; border-radius: 2px; overflow: hidden; margin: 0.5em 0; }
-        .progress-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.3s; }
+        #loadBtn { background: var(--primary); color: white; }
+        #runBtn { background: var(--success); color: white; }
+        #status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
+        .progress { width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin: 0.5rem 0; }
+        .progress-bar { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s; }
+        .progress-bar.success { background: var(--success); }
+        .progress-bar.error { background: #ef4444; }
+        .debug { font-size: 0.75rem; color: #475569; margin-top: 0.5rem; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; display: none; background: #f8fafc; padding: 0.5rem; border-radius: 6px; border: 1px solid #e2e8f0; }
+        .debug.show { display: block; }
+        .hint { font-size: 0.85rem; color: #64748b; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; display: none; }
+        .rules-panel { background: #f1f5f9; padding: 0.8rem; border-radius: 8px; margin: 0.5rem 0; font-size: 0.85rem; }
+        .rules-panel label { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.8rem; cursor: pointer; }
     </style>
 </head>
 <body>
-    <h1>🔒 Анонимизация (Pyodide Lite)</h1>
-    
-    <div class="btn-group">
-        <button id="initBtn">🐍 Загрузить Python</button>
-        <button id="runBtn" disabled>Анонимизировать</button>
-    </div>
-    
-    <div id="status">Нажмите "Загрузить Python"</div>
-    <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-    
-    <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Паспорт: 4510 123456.</textarea>
-    
-    <div class="note">
-        <strong>Как работает:</strong> Python (Pyodide) ищет ФИО по словарю, 
-        JavaScript ищет организации и документы по regex. 
-        Всё локально, безопасно.
+    <div class="card">
+        <h1>🔒 Анонимизация (Gherman BERT NER)</h1>
+        <div id="fileWarning" class="warning">⚠️ Запустите через: <code>python -m http.server 8000</code></div>
+
+        <div class="rules-panel" id="rulesPanel">
+            <strong>Типы сущностей:</strong><br>
+            <label><input type="checkbox" checked data-rule="PER"> 👤 ФИО (Фамилия/Имя/Отчество)</label>
+            <label><input type="checkbox" checked data-rule="LOC"> 📍 Локации (Город/Улица/Дом)</label>
+            <label><input type="checkbox" checked data-rule="ORG"> 🏢 Организации</label>
+            <label><input type="checkbox" checked data-rule="struct"> 🔢 Структурированные (ИНН/Паспорт)</label>
+        </div>
+
+        <div class="btn-group">
+            <button id="loadBtn">🔄 Загрузить модель</button>
+            <button id="runBtn" disabled>🔒 Анонимизировать</button>
+            <button id="debugBtn" style="background:#64748b;color:white">🐛 Отладка</button>
+        </div>
+        
+        <div id="status">Нажмите "Загрузить модель"</div>
+        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+        <textarea id="inputText" disabled placeholder="Вставьте текст...">Иванов Иван Петрович из Москвы работает в ООО Яндекс.</textarea>
+        <div class="debug" id="debugPanel"></div>
+        <div class="hint">
+            <strong>Модель:</strong> <code>Gherman/bert-base-NER-Russian</code> (ONNX).<br>
+            Специализирована на русском языке, понимает падежи и детальные типы сущностей.
+        </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
-    
-    <script>
-        let pyodide = null;
-        let ready = false;
+    <script type="module">
+        // ==========================================
+        // 📦 КОНФИГУРАЦИЯ
+        // ==========================================
+        const CONFIG = {
+            // Используем ONNX-версию модели Gherman
+            modelId: 'onnx-community/bert-base-NER-Russian', 
+            nerThreshold: 0.5,
+            chunkSize: 450,
+            overlap: 60,
+            // Маппинг детальных тегов модели в наши метки
+            labels: {
+                'LAST_NAME': 'ФАМИЛИЯ',
+                'FIRST_NAME': 'ИМЯ',
+                'MIDDLE_NAME': 'ОТЧЕСТВО',
+                'PER': 'ФИО', // На случай, если модель вернёт общий тег
+                'CITY': 'ГОРОД',
+                'STREET': 'УЛИЦА',
+                'HOUSE': 'ДОМ',
+                'REGION': 'РЕГИОН',
+                'COUNTRY': 'СТРАНА',
+                'LOC': 'МЕСТО',
+                'ORG': 'ОРГАНИЗАЦИЯ',
+                'ORGANIZATION': 'ОРГАНИЗАЦИЯ'
+            },
+            structPatterns: [
+                { id: 'PASSPORT', label: 'ПАСПОРТ', pattern: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi },
+                { id: 'INN', label: 'ИНН', pattern: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi },
+                { id: 'OGRN', label: 'ОГРН', pattern: /(?:ОГРН[ИП]?\s*:?\s*)?\d{13,15}\b/gi },
+                { id: 'SNILS', label: 'СНИЛС', pattern: /(?:СНИЛС\s*:?\s*)?(?:\d{3}-\d{3}-\d{3}\s?\d{2}|\d{11})\b/gi }
+            ]
+        };
 
-        const initBtn = document.getElementById('initBtn');
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
+        if (window.location.protocol === 'file:') document.getElementById('fileWarning').style.display = 'block';
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+
+        const loadBtn = document.getElementById('loadBtn');
         const runBtn = document.getElementById('runBtn');
+        const debugBtn = document.getElementById('debugBtn');
+        const textarea = document.getElementById('inputText');
         const status = document.getElementById('status');
         const progressBar = document.getElementById('progressBar');
-        const textarea = document.getElementById('inputText');
+        const debugPanel = document.getElementById('debugPanel');
+        let pipe, lastDebug = '';
 
-        // === 1. Инициализация Pyodide ===
-        async function init() {
-            initBtn.disabled = true;
-            status.textContent = '⏳ Загрузка Pyodide...';
-            progressBar.style.width = '10%';
-
-            try {
-                // Загружаем ядро
-                pyodide = await loadPyodide({
-                    indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.2/full/'
-                });
-                
-                progressBar.style.width = '50%';
-                status.textContent = '⏳ Подготовка Python...';
-
-                // Загружаем micropip (обязательно для 0.27+)
-                await pyodide.loadPackage('micropip');
-
-                // Создаём простую функцию поиска ФИО в Python
-                // Мы избегаем сложных regex в Python, чтобы не было проблем с кавычками
-                await pyodide.runPythonAsync(`
-                    import re
-                    
-                    # Простые словари для эвристики
-                    FIRST_NAMES = {
-                        'иван', 'петр', 'александр', 'михаил', 'сергей', 'андрей', 
-                        'алексей', 'дмитрий', 'николай', 'владимир', 'павел', 'константин',
-                        'мария', 'анна', 'елена', 'ольга', 'татьяна', 'наталья', 'светлана'
-                    }
-                    LAST_NAMES = {
-                        'иванов', 'петров', 'сидоров', 'смирнов', 'попов', 'козлов', 
-                        'новиков', 'морозов', 'волков', 'соколов', 'родина', 'чикарев', 'новиков'
-                    }
-
-                    def find_names(text):
-                        """Ищет последовательности слов с заглавной буквы и проверяет по словарю"""
-                        entities = []
-                        # Паттерн: 2 или 3 слова с заглавной буквы (русские)
-                        pattern = re.compile(r'\\b([А-ЯЁ][а-яё]+(?:\\s+[А-ЯЁ][а-яё]+){1,2})\\b')
-                        
-                        for m in pattern.finditer(text):
-                            candidate = m.group(1)
-                            words = candidate.lower().split()
-                            
-                            # Проверяем: есть ли хоть одно слово в словарях?
-                            # Это отсеивает "Город Москва" или "ООО Яндекс"
-                            has_name = any(w in FIRST_NAMES or w in LAST_NAMES for w in words)
-                            
-                            if has_name:
-                                entities.append({
-                                    'text': candidate, 
-                                    'type': 'PER', 
-                                    'start': m.start(), 
-                                    'end': m.end()
-                                })
-                        return entities
-                `);
-                
-                progressBar.style.width = '100%';
-                status.textContent = '✅ Готово!';
-                initBtn.textContent = '✅ Загружено';
-                initBtn.style.background = '#4caf50';
-                textarea.disabled = false;
-                runBtn.disabled = false;
-                ready = true;
-                
-            } catch (e) {
-                status.textContent = '❌ Ошибка: ' + e.message;
-                initBtn.disabled = false;
-                console.error(e);
-            }
+        function getActiveTypes() {
+            const active = new Set();
+            document.querySelectorAll('#rulesPanel input:checked').forEach(cb => active.add(cb.dataset.rule));
+            return active;
         }
 
-        // === 2. Анонимизация (Гибрид JS + Python) ===
-        async function anonymize() {
-            const text = textarea.value.trim();
-            if (!text || !ready) return;
-            
-            runBtn.disabled = true;
-            status.textContent = '⏳ Анализ...';
-            
+        loadBtn.addEventListener('click', async () => {
+            loadBtn.disabled = true; loadBtn.textContent = '⏳ Загрузка...';
+            status.textContent = '⏳ Инициализация...';
+            progressBar.className = 'progress-bar'; progressBar.style.width = '10%';
             try {
-                let allEntities = [];
+                pipe = await pipeline('token-classification', CONFIG.modelId, {
+                    progress_callback: (e) => {
+                        if (e.total && e.loaded) {
+                            const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
+                            progressBar.style.width = `${pct}%`; status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
+                        } else if (e.status === 'ready') {
+                            progressBar.style.width = '100%'; status.textContent = '✅ Модель готова!';
+                        }
+                    }
+                });
+                progressBar.className = 'progress-bar success'; progressBar.style.width = '100%';
+                status.textContent = '✅ Модель готова!';
+                loadBtn.textContent = '✅ Загружено'; loadBtn.style.background = '#10b981';
+                textarea.disabled = false; runBtn.disabled = false;
+            } catch (err) {
+                console.error(err);
+                progressBar.className = 'progress-bar error'; progressBar.style.width = '100%';
+                status.textContent = `❌ Ошибка: ${err.message}`;
+                loadBtn.disabled = false; loadBtn.textContent = '🔄 Загрузить модель';
+            }
+        });
 
-                // А. Поиск ФИО через Python (умная эвристика)
-                const pyNames = await pyodide.runPythonAsync(`find_names(${JSON.stringify(text)})`).then(r => r.toJs());
-                allEntities = allEntities.concat(pyNames);
+        runBtn.addEventListener('click', async () => {
+            const text = textarea.value.trim();
+            if (!text) { status.textContent = '⚠️ Введите текст'; return; }
+            const types = getActiveTypes();
 
-                // Б. Поиск остального через JS Regex (быстро и надёжно)
-                
-                // Организации
-                const orgRe = /\b(?:ООО|ЗАО|ОАО|ПАО|ИП|АО)\s*[«"]?[А-ЯЁ][А-ЯЁа-яё\s\-\.,&«»"'#№]{2,60}[»"]?/gi;
-                for (const m of text.matchAll(orgRe)) {
-                    allEntities.push({ text: m[0], type: 'ОРГАНИЗАЦИЯ', start: m.index, end: m.index + m[0].length });
-                }
+            runBtn.disabled = true; status.textContent = '⏳ Анализ...';
+            progressBar.className = 'progress-bar'; progressBar.style.width = '5%';
+            debugPanel.classList.remove('show'); lastDebug = '';
 
-                // Документы и прочее
-                const structRules = [
-                    { re: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi, label: 'ПАСПОРТ' },
-                    { re: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi, label: 'ИНН' },
-                    { re: /(?:ОГРН[ИП]?\s*:?\s*)?\d{13,15}\b/gi, label: 'ОГРН' },
-                    { re: /(?:СНИЛС\s*:?\s*)?(?:\d{3}-\d{3}-\d{3}\s?\d{2}|\d{11})\b/gi, label: 'СНИЛС' },
-                    { re: /(?:ул\.|улица|пр-кт|проспект|пер\.|д\.|дом|кв\.|квартира)\s+[А-ЯЁа-яё\d\s\-\.,«»"'#№]{3,50}/gi, label: 'АДРЕС' }
-                ];
+            try {
+                const allEntities = [];
 
-                for (const rule of structRules) {
-                    rule.re.lastIndex = 0;
-                    for (const m of text.matchAll(rule.re)) {
-                        allEntities.push({ text: m[0], type: rule.label, start: m.index, end: m.index + m[0].length });
+                // 1. NER (чанкование)
+                if ((types.has('PER') || types.has('LOC') || types.has('ORG')) && pipe) {
+                    const { chunkSize, overlap } = CONFIG;
+                    const chunks = [];
+                    for (let i = 0; i < text.length; i += chunkSize - overlap) {
+                        chunks.push({ text: text.slice(i, i + chunkSize), offset: i });
+                    }
+
+                    for (let i = 0; i < chunks.length; i++) {
+                        progressBar.style.width = `${5 + Math.round(((i + 1) / chunks.length) * 40)}%`;
+                        // aggregation_strategy: 'simple' склеивает B- I- теги
+                        const res = await pipe(chunks[i].text, { aggregation_strategy: 'simple' });
+                        
+                        for (const e of res) {
+                            const group = e.entity_group || e.entity;
+                            const label = CONFIG.labels[group];
+                            
+                            // Фильтр по типам
+                            if (!label) continue;
+                            if (label === 'ФАМИЛИЯ' || label === 'ИМЯ' || label === 'ОТЧЕСТВО' || label === 'ФИО') {
+                                if (!types.has('PER')) continue;
+                            } else if (['ГОРОД', 'УЛИЦА', 'ДОМ', 'РЕГИОН', 'СТРАНА', 'МЕСТО'].includes(label)) {
+                                if (!types.has('LOC')) continue;
+                            } else if (label === 'ОРГАНИЗАЦИЯ') {
+                                if (!types.has('ORG')) continue;
+                            }
+
+                            if (e.score >= CONFIG.nerThreshold && typeof e.start === 'number') {
+                                allEntities.push({
+                                    start: e.start + chunks[i].offset,
+                                    end: e.end + chunks[i].offset,
+                                    type: label, score: e.score, 
+                                    text: text.slice(e.start + chunks[i].offset, e.end + chunks[i].offset),
+                                    source: 'ner'
+                                });
+                            }
+                        }
                     }
                 }
 
-                // В. Сортировка и удаление перекрытий
+                // 2. Структурированные паттерны
+                if (types.has('struct')) {
+                    for (const rule of CONFIG.structPatterns) {
+                        rule.pattern.lastIndex = 0;
+                        for (const m of text.matchAll(rule.pattern)) {
+                            allEntities.push({
+                                start: m.index, end: m.index + m[0].length,
+                                type: rule.label, score: 1.0, text: m[0], source: 'regex'
+                            });
+                        }
+                    }
+                }
+
+                // 3. Слияние соседних сущностей (для ФИО)
                 allEntities.sort((a, b) => a.start - b.start);
                 const merged = [];
-                for (const e of allEntities) {
-                    if (!merged.length || e.start >= merged[merged.length - 1].end) {
-                        merged.push(e);
+                for (const ent of allEntities) {
+                    // Если сущности рядом (разрыв <= 2 символа) и обе относятся к PER, сливаем их в одно ФИО
+                    const isPer = ['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО', 'ФИО'].includes(ent.type);
+                    const lastIsPer = merged.length && ['ФАМИЛИЯ', 'ИМЯ', 'ОТЧЕСТВО', 'ФИО'].includes(merged[merged.length-1].type);
+                    
+                    if (merged.length && ent.start <= merged[merged.length - 1].end + 2 && isPer && lastIsPer) {
+                        const last = merged[merged.length - 1];
+                        last.end = Math.max(last.end, ent.end);
+                        last.text = text.slice(last.start, last.end);
+                        last.type = 'ФИО'; // Объединяем в общее ФИО
+                        last.score = Math.max(last.score, ent.score);
+                    } else if (!merged.length || ent.start > merged[merged.length - 1].end) {
+                        merged.push(ent);
+                    } else if (ent.score > merged[merged.length - 1].score) {
+                        merged[merged.length - 1] = ent;
                     }
                 }
 
-                // Г. Замена (с конца текста)
-                let result = text;
-                const labels = { PER: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ' };
-                
-                merged.reverse().forEach(e => {
-                    const label = labels[e.type] || e.type;
-                    result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
-                });
-                
-                textarea.value = result;
-                status.textContent = `✅ Готово! Заменено ${merged.length} сущностей.`;
-                
-            } catch (e) {
-                status.textContent = '❌ Ошибка: ' + e.message;
-                console.error(e);
-            } finally {
-                runBtn.disabled = false;
-            }
-        }
+                // Лог отладки
+                lastDebug = `🔍 Найдено сущностей: ${merged.length}\n`;
+                lastDebug += merged.map((e, i) => `#${i+1} [${e.source}] ${e.type} "${e.text}" (${e.start}-${e.end}) conf:${e.score.toFixed(2)}`).join('\n') + '\n\n';
 
-        initBtn.addEventListener('click', init);
-        runBtn.addEventListener('click', anonymize);
+                // 4. Замена
+                let result = text;
+                merged.reverse().forEach(e => {
+                    result = result.slice(0, e.start) + `[${e.type}]` + result.slice(e.end);
+                });
+
+                textarea.value = result;
+                progressBar.className = 'progress-bar success'; progressBar.style.width = '100%';
+                status.textContent = `✅ Готово! Заменено ${merged.length} сущностей.`;
+                lastDebug += `📝 Итог:\n${result.substring(0, 500)}...`;
+            } catch (err) {
+                console.error(err);
+                progressBar.className = 'progress-bar error'; progressBar.style.width = '100%';
+                status.textContent = '❌ Ошибка обработки.';
+            } finally { runBtn.disabled = false; }
+        });
+
+        debugBtn.addEventListener('click', () => {
+            debugPanel.textContent = lastDebug || 'Обработайте текст для отладки';
+            debugPanel.classList.toggle('show');
+        });
     </script>
 </body>
 </html>
