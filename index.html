@@ -3,56 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Анонимизатор (чанкинг + нумерация)</title>
+  <title>Анонимизатор (резервный слой для одиночных имён)</title>
   <style>
     :root {
-      --primary: #2563eb;
-      --success: #10b981;
-      --error: #ef4444;
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --border: #e2e8f0;
-      --text: #0f172a;
-      --muted: #64748b;
+      --primary: #2563eb; --success: #10b981; --error: #ef4444;
+      --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0;
+      --text: #0f172a; --muted: #64748b;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: system-ui, -apple-system, sans-serif;
-      max-width: 960px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      background: var(--bg);
-      color: var(--text);
+      max-width: 960px; margin: 2rem auto; padding: 0 1rem;
+      background: var(--bg); color: var(--text);
     }
     .card {
-      background: var(--card);
-      padding: 1.5rem;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      background: var(--card); padding: 1.5rem;
+      border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       margin-bottom: 1.5rem;
     }
     h1 { font-size: 1.5rem; margin-bottom: 1rem; }
     textarea {
-      width: 100%;
-      height: 220px;
-      margin: 1rem 0;
-      padding: 0.8rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 15px;
-      resize: vertical;
-      background: #f8fafc;
+      width: 100%; height: 220px; margin: 1rem 0; padding: 0.8rem;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 15px; resize: vertical; background: #f8fafc;
       font-family: monospace;
     }
     textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
     .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; margin: 0.5rem 0; }
     button {
-      padding: 0.6rem 1.2rem;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border: none;
-      border-radius: 6px;
+      padding: 0.6rem 1.2rem; font-size: 14px; font-weight: 500;
+      cursor: pointer; border: none; border-radius: 6px;
       transition: opacity 0.2s;
     }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -60,76 +40,50 @@
     #runBtn { background: var(--success); color: white; }
     #debugToggle { background: #64748b; color: white; }
     .progress {
-      width: 100%;
-      height: 4px;
-      background: var(--border);
-      border-radius: 2px;
-      overflow: hidden;
-      margin: 0.5rem 0;
+      width: 100%; height: 4px; background: var(--border);
+      border-radius: 2px; overflow: hidden; margin: 0.5rem 0;
     }
     .progress-bar {
-      height: 100%;
-      width: 0%;
-      background: var(--primary);
+      height: 100%; width: 0%; background: var(--primary);
       transition: width 0.3s;
     }
     .progress-bar.success { background: var(--success); }
     .progress-bar.error { background: var(--error); }
     .status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
     .hint {
-      font-size: 0.85rem;
-      color: var(--muted);
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--border);
+      font-size: 0.85rem; color: var(--muted);
+      margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);
     }
     .warning {
-      background: #fef3c7;
-      border-left: 4px solid #f59e0b;
-      padding: 0.8rem;
-      border-radius: 0 6px 6px 0;
-      margin-bottom: 1rem;
-      font-size: 0.9rem;
-      display: none;
+      background: #fef3c7; border-left: 4px solid #f59e0b;
+      padding: 0.8rem; border-radius: 0 6px 6px 0;
+      margin-bottom: 1rem; font-size: 0.9rem; display: none;
     }
     .debug {
-      font-size: 0.8rem;
-      color: #334155;
-      margin-top: 0.5rem;
-      font-family: monospace;
-      white-space: pre-wrap;
-      max-height: 250px;
-      overflow-y: auto;
-      background: #f1f5f9;
-      padding: 0.8rem;
-      border-radius: 6px;
+      font-size: 0.8rem; color: #334155;
+      margin-top: 0.5rem; font-family: monospace;
+      white-space: pre-wrap; max-height: 250px; overflow-y: auto;
+      background: #f1f5f9; padding: 0.8rem; border-radius: 6px;
       display: none;
     }
     .debug.show { display: block; }
     .settings {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 0.5rem 1rem;
-      margin: 1rem 0;
+      gap: 0.5rem 1rem; margin: 1rem 0;
     }
     .setting label {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.9rem;
+      display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;
     }
     .slider-container {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin: 0.5rem 0;
+      display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;
     }
     input[type="range"] { width: 150px; }
   </style>
 </head>
 <body>
 <div class="card">
-  <h1>🔒 Анонимизатор (чанкинг + нумерация)</h1>
+  <h1>🔒 Анонимизатор (резервный поиск имён)</h1>
 
   <div id="fileWarning" class="warning">
     ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
@@ -152,14 +106,14 @@
     <span id="thresholdValue">0.70</span>
   </div>
 
-  <textarea id="inputText" disabled placeholder="Введите текст...">Сергеева Клавдия Аркадьевна работает в Свердловском филиале ПАО «Т Плюс», г. Екатеринбург, пр. Ленина, 38. Тел. +7(343)359-18-85, эл.почта: klava@tplusgroup.ru</textarea>
+  <textarea id="inputText" disabled placeholder="Введите текст...">Иванов, Петров, Сидоров работают в ООО «Яндекс». Тел. +7(343)359-18-85, эл.почта: ivanoff@yandex.ru</textarea>
 
   <div class="debug" id="debugPanel"></div>
 
   <div class="hint">
-    <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (чанкинг для длинных текстов)<br>
-    <strong>Regex‑типы:</strong> организации, названия в кавычках, email, телефон, паспорт, СНИЛС, ИНН, ОГРН<br>
-    <strong>Особенность:</strong> повторяющиеся одинаковые строки маскируются одним номером (например, [ФИО-1])<br>
+    <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
+    <strong>Regex‑типы:</strong> организации, email, телефон, паспорт, СНИЛС, ИНН, ОГРН<br>
+    <strong>Резервный слой:</strong> одиночные слова с заглавной буквы можно включить как «ФИО?»<br>
     <strong>Приватность:</strong> всё локально
   </div>
 </div>
@@ -186,23 +140,24 @@
   const typeSettings = document.getElementById('typeSettings');
 
   let nerPipeline;
-  let tokenizer;
   let modelLoaded = false;
   let lastDebug = '';
 
+  // Добавлен тип SINGLE_NAME (выключен по умолчанию)
   const entityConfig = {
     PER:        { label: 'ФИО',             enabled: true },
+    SINGLE_NAME:{ label: 'ФИО?',            enabled: false }, // резервный
     ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
     TITLE:      { label: 'НАЗВАНИЕ',        enabled: false },
     LOC:        { label: 'МЕСТО',           enabled: false },
     GPE:        { label: 'ЛОКАЦИЯ',         enabled: false },
     MISC:       { label: 'ДРУГОЕ',          enabled: false },
     PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
-    SNILS:      { label: 'СНИЛС',           enabled: true },
-    INN:        { label: 'ИНН',             enabled: true },
-    OGRN:       { label: 'ОГРН',            enabled: true },
-    PHONE:      { label: 'ТЕЛЕФОН',         enabled: true },
-    EMAIL:      { label: 'EMAIL',           enabled: true }
+    SNILS:      { label: 'СНИЛС',          enabled: true },
+    INN:        { label: 'ИНН',            enabled: true },
+    OGRN:       { label: 'ОГРН',           enabled: true },
+    PHONE:      { label: 'ТЕЛЕФОН',        enabled: true },
+    EMAIL:      { label: 'EMAIL',          enabled: true }
   };
 
   // Валидация
@@ -236,7 +191,7 @@
     return check === (remainder === 10 ? 0 : remainder);
   }
 
-  // Regex‑сущности (те же, но теперь они будут добавлены после обработки чанков)
+  // --- Regex-сущности (те же) ---
   function findRegexEntities(text, baseOffset = 0) {
     const results = [];
     const patterns = [
@@ -270,7 +225,32 @@
     return results;
   }
 
-  // Функция locateTokens (поиск позиций для одного чанка)
+  // Резервный поиск одиночных слов с заглавной буквы (исключая явные не-имена)
+  function findSingleNames(text) {
+    const words = [];
+    const regex = /\b([А-ЯЁ][а-яё]{1,30})\b/g;
+    const stopWords = new Set([
+      'ООО', 'ЗАО', 'АО', 'ПАО', 'ОАО', 'ИП',
+      'Тел', 'Телефон', 'Email', 'Почта', 'Адрес', 'Город', 'Улица', 'Дом', 'Квартира',
+      'Паспорт', 'СНИЛС', 'ИНН', 'ОГРН', 'ОТЧЕСТВО', 'ФИО', 'ОРГАНИЗАЦИЯ',
+      'Яндекс', 'Гугл', 'Майл', 'Рамблер'  // можно расширить
+    ]);
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const word = match[0];
+      if (stopWords.has(word)) continue;
+      words.push({
+        start: match.index,
+        end: match.index + word.length,
+        word,
+        entity_group: 'SINGLE_NAME',
+        score: 0.5  // низкий приоритет
+      });
+    }
+    return words;
+  }
+
+  // Поиск позиций (прежний)
   function locateTokens(tokens, text) {
     const located = [];
     let currentPos = 0;
@@ -281,7 +261,7 @@
       let idx;
       if (isSubword) {
         idx = text.indexOf(word, currentPos);
-        if (idx !== currentPos) continue; // подслово должно примыкать
+        if (idx !== currentPos) continue;
       } else {
         idx = text.indexOf(word, currentPos);
         if (idx === -1) continue;
@@ -308,6 +288,7 @@
     return e.entity_group === 'PER' && e.word.length === 1 && !e.word.match(/[А-ЯЁA-Z]\.?/);
   }
 
+  // Объединение имён (мягкое, допускает пробелы, но не запятые)
   function mergePersonTokens(entities, text) {
     const merged = [];
     for (const e of entities) {
@@ -316,10 +297,16 @@
         continue;
       }
       const prev = merged[merged.length-1];
-      if (prev.entity_group === 'PER' && e.entity_group === 'PER' && e.start <= prev.end + 2) {
-        prev.end = e.end;
-        prev.word = text.slice(prev.start, e.end);
-        prev.score = Math.min(prev.score, e.score);
+      const bothPerson = (prev.entity_group === 'PER' && e.entity_group === 'PER');
+      if (bothPerson && e.start <= prev.end + 2) {
+        const between = text.slice(prev.end, e.start);
+        if (!between.includes(',')) {
+          prev.end = e.end;
+          prev.word = text.slice(prev.start, e.end);
+          prev.score = Math.min(prev.score, e.score);
+        } else {
+          merged.push(e);
+        }
       } else {
         merged.push(e);
       }
@@ -327,77 +314,22 @@
     return merged;
   }
 
-  // Чанкование и обработка NER
-  async function processLongText(text, threshold) {
-    const MAX_TOKENS = 450;
-    const OVERLAP = 50;
-    const tokenized = await tokenizer(text);
-    const inputIds = tokenized.input_ids;
-    const totalTokens = inputIds.length;
-
-    // Если текст короткий, просто обрабатываем целиком
-    if (totalTokens <= MAX_TOKENS + OVERLAP) {
-      const rawTokens = await nerPipeline(text, { group_entities: true });
-      const located = locateTokens(rawTokens, text);
-      return { locatedTokens: located, offsets: null };
-    }
-
-    // Иначе чанкинг
-    let allLocated = [];
-    let chunkStart = 0;
-    const chunks = [];
-    // Собираем чанки в виде подстрок с перекрытием
-    while (chunkStart < totalTokens) {
-      const chunkEnd = Math.min(chunkStart + MAX_TOKENS, totalTokens);
-      const chunkIds = inputIds.slice(chunkStart, chunkEnd);
-      const chunkText = await tokenizer.decode(chunkIds, { skip_special_tokens: true });
-      chunks.push({ text: chunkText, start: chunkStart, end: chunkEnd });
-      chunkStart += (MAX_TOKENS - OVERLAP);
-    }
-
-    // Обрабатываем каждый чанк
-    for (let i = 0; i < chunks.length; i++) {
-      const { text: chunkText } = chunks[i];
-      const raw = await nerPipeline(chunkText, { group_entities: true });
-      const located = locateTokens(raw, chunkText);
-      // Здесь нужно пересчитать позиции с учётом смещения внутри исходного текста
-      // Упростим: ищем смещение, декодируя начало чанка
-      const originalStart = chunkText.length > 0 ? text.indexOf(chunkText) : 0;
-      const withOffset = located.map(t => ({
-        ...t,
-        start: t.start + originalStart,
-        end: t.end + originalStart
-      }));
-      allLocated = allLocated.concat(withOffset);
-      // Обновляем прогресс
-      const progress = Math.round(((i+1) / chunks.length) * 80) + 10;
-      progressBar.style.width = progress + '%';
-      status.textContent = `⏳ Обработка чанка ${i+1}/${chunks.length}...`;
-      // Небольшая пауза, чтобы не блокировать UI
-      await new Promise(r => setTimeout(r, 10));
-    }
-    return { locatedTokens: allLocated, offsets: null };
-  }
-
-  // Построение словаря повторяющихся сущностей
+  // Нумерация
   function buildEntityNumbering(entities, text) {
-    const typeMap = {}; // { тип: { оригинал: номер } }
-    const entityNumbers = [];
+    const typeMap = {};
+    const numbers = [];
     for (const e of entities) {
       const type = e.entity_group;
       if (!typeMap[type]) typeMap[type] = {};
       const orig = text.slice(e.start, e.end);
       if (!typeMap[type][orig]) {
-        const num = Object.keys(typeMap[type]).length + 1;
-        typeMap[type][orig] = num;
+        typeMap[type][orig] = Object.keys(typeMap[type]).length + 1;
       }
-      const num = typeMap[type][orig];
-      entityNumbers.push(num);
+      numbers.push(typeMap[type][orig]);
     }
-    return { typeMap, entityNumbers };
+    return { typeMap, numbers };
   }
 
-  // UI
   function renderTypeSettings() {
     let html = '';
     for (const [type, cfg] of Object.entries(entityConfig)) {
@@ -417,7 +349,13 @@
     });
   }
 
-  // Загрузка модели
+  // Процесс обработки (без чанкинга, модель всегда вызывается)
+  async function processText(text) {
+    const rawTokens = await nerPipeline(text, { group_entities: true });
+    return locateTokens(rawTokens, text);
+  }
+
+  // Загрузка
   loadBtn.addEventListener('click', async () => {
     loadBtn.disabled = true;
     loadBtn.textContent = '⏳ Загрузка...';
@@ -433,7 +371,7 @@
             if (e.total && e.loaded) {
               const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
               progressBar.style.width = `${pct}%`;
-              status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
+              status.textContent = `${e.file || 'Загрузка'}: ${pct}%`;
             }
           } else if (e.status === 'ready') {
             progressBar.style.width = '100%';
@@ -441,7 +379,6 @@
           }
         }
       });
-      tokenizer = nerPipeline.tokenizer;
       modelLoaded = true;
       progressBar.className = 'progress-bar success';
       progressBar.style.width = '100%';
@@ -463,8 +400,8 @@
 
   // Анонимизация
   runBtn.addEventListener('click', async () => {
-    const text = textarea.value.trim();
-    if (!text) { status.textContent = '⚠️ Введите текст'; return; }
+    const text = textarea.value;
+    if (!text.trim()) { status.textContent = '⚠️ Введите текст'; return; }
     if (!modelLoaded) { status.textContent = '⚠️ Сначала загрузите модель'; return; }
 
     runBtn.disabled = true;
@@ -476,82 +413,72 @@
 
     try {
       const threshold = parseFloat(nerThreshold.value);
-      // 1. NER (чанкинг, если нужно)
-      progressBar.style.width = '25%';
-      const { locatedTokens } = await processLongText(text, threshold);
-      lastDebug += `🔍 NER-токены с позициями (${locatedTokens.length}):\n${JSON.stringify(locatedTokens, null, 2)}\n\n`;
 
-      // 2. Преобразуем в сущности
-      const nerEntities = locatedTokens
+      // 1. NER
+      const located = await processText(text);
+      lastDebug += `🔍 NER-токены (${located.length}):\n${JSON.stringify(located, null, 2)}\n\n`;
+
+      let nerEntities = located
         .filter(t => t.score >= threshold)
         .map(t => {
-          const tag = t.entity;
-          const label = tag.split('-').slice(1).join('-');
-          const group = bioToGroup[label] || label || 'MISC';
+          const label = t.entity.split('-').slice(1).join('-');
           return {
             start: t.start,
             end: t.end,
             word: text.slice(t.start, t.end),
-            entity_group: group,
+            entity_group: bioToGroup[label] || label || 'MISC',
             score: t.score
           };
         })
         .filter(e => !isSingleCharJunk(e));
 
-      // 3. Объединяем PER
       const nerMerged = mergePersonTokens(nerEntities, text);
-      lastDebug += `🧩 NER после объединения PER (${nerMerged.length}):\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
+      lastDebug += `🧩 NER объединённые (${nerMerged.length}):\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
 
-      // 4. Regex‑сущности (по всему тексту)
+      // 2. Regex
       const regexEntities = findRegexEntities(text, 0);
-      lastDebug += `🔎 Regex-сущности (${regexEntities.length}):\n${JSON.stringify(regexEntities.map(e=>({word:e.word, type:e.entity_group})), null, 2)}\n\n`;
+      // 3. Резервные одиночные имена (если тип включён, но по умолчанию выключен)
+      const singleNames = entityConfig.SINGLE_NAME.enabled ? findSingleNames(text) : [];
+      lastDebug += `🔎 Regex (${regexEntities.length}), Резервные имена (${singleNames.length})\n`;
 
-      // 5. Объединяем все включённые типы
-      let all = [...nerMerged, ...regexEntities]
+      // 4. Объединение всех
+      let all = [...nerMerged, ...regexEntities, ...singleNames]
         .filter(e => entityConfig[e.entity_group]?.enabled);
 
-      // 6. Сортировка и разрешение перекрытий
       all.sort((a,b) => a.start - b.start);
-      const finalEntities = [];
+      const final = [];
       for (const e of all) {
-        if (finalEntities.length === 0 || e.start >= finalEntities[finalEntities.length-1].end) {
-          finalEntities.push(e);
+        if (final.length === 0 || e.start >= final[final.length-1].end) {
+          final.push(e);
         } else {
-          const prev = finalEntities[finalEntities.length-1];
+          const prev = final[final.length-1];
           if (e.score > prev.score || (e.score === prev.score && (e.end-e.start) > (prev.end-prev.start))) {
-            finalEntities[finalEntities.length-1] = e;
+            final[final.length-1] = e;
           }
         }
       }
 
-      // 7. Нумерация повторяющихся строк
-      const { typeMap, entityNumbers } = buildEntityNumbering(finalEntities, text);
-      lastDebug += `✅ Итоговые сущности (${finalEntities.length}):\n`;
-      finalEntities.forEach((e, idx) => {
-        const num = entityNumbers[idx];
-        const label = entityConfig[e.entity_group].label;
-        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${e.entity_group}-${num} (${e.score.toFixed(3)})\n`;
+      const { numbers } = buildEntityNumbering(final, text);
+      lastDebug += `✅ Итоговые сущности (${final.length}):\n`;
+      final.forEach((e, i) => {
+        const cfgLabel = entityConfig[e.entity_group]?.label || e.entity_group;
+        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${numbers[i]} (${e.score.toFixed(3)})\n`;
       });
 
-      // 8. Замена с конца, используя номера
+      // Замена
       let result = text;
-      const replacements = [];
-      for (let i = finalEntities.length-1; i >= 0; i--) {
-        const e = finalEntities[i];
-        const label = entityConfig[e.entity_group].label;
-        const num = entityNumbers[i];
-        const masked = `[${label}-${num}]`;
-        replacements.push({ start: e.start, end: e.end, original: text.slice(e.start, e.end), masked });
+      for (let i = final.length-1; i >= 0; i--) {
+        const e = final[i];
+        const label = entityConfig[e.entity_group]?.label || e.entity_group;
+        const masked = `[${label}-${numbers[i]}]`;
         result = result.slice(0, e.start) + masked + result.slice(e.end);
       }
-      lastDebug += `\n📝 Замены: ${replacements.length}\n`;
-      replacements.reverse().forEach(r => lastDebug += `  [${r.start}-${r.end}] "${r.original}" → ${r.masked}\n`);
 
       textarea.value = result;
       progressBar.className = 'progress-bar success';
       progressBar.style.width = '100%';
-      status.textContent = `✅ Готово! Заменено ${replacements.length} сущностей.`;
-      if (replacements.length === 0) {
+      status.textContent = `✅ Готово! Заменено ${final.length} сущностей.`;
+      if (final.length === 0) {
         debugPanel.textContent = lastDebug;
         debugPanel.classList.add('show');
         status.textContent += ' (см. отладку)';
@@ -567,12 +494,9 @@
     }
   });
 
-  // Порог
   nerThreshold.addEventListener('input', () => {
     thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
   });
-
-  // Отладка
   debugToggle.addEventListener('click', () => {
     if (lastDebug) {
       debugPanel.textContent = lastDebug;
