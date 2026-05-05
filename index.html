@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор текстов (онлайн)</title>
+    <title>Анонимизатор текстов</title>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; background: #f8f9fa; }
         textarea { width: 100%; height: 250px; margin: 1em 0; padding: 0.8em; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; resize: vertical; }
@@ -17,23 +17,22 @@
 </head>
 <body>
     <h1>🔒 Анонимизация текстов (онлайн)</h1>
-    <textarea id="inputText" placeholder="Вставьте текст для обработки...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Его телефон +7 (916) 555-44-33, а почта ivanov@yandex.ru.</textarea>
+    <textarea id="inputText" placeholder="Вставьте текст для обработки...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Телефон: +7 (916) 555-44-33</textarea>
     <button id="anonymizeBtn" disabled>Анонимизировать</button>
     <div id="status">Инициализация...</div>
     <div id="progress-bar"><div id="progress-fill"></div></div>
     <div class="note">
-        <strong>Как это работает:</strong> Нейросеть загружается один раз и сохраняется в кэше браузера. 
-        Текст обрабатывается локально, данные <strong>не покидают</strong> ваше устройство.
+        <strong>Как это работает:</strong> Модель загружается один раз (~45 МБ) и кэшируется в браузере. 
+        Обработка происходит локально, данные <strong>не отправляются</strong> на сервер.
     </div>
 
     <script type="module">
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 
-        // Настройки для надёжной загрузки через CDN
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
-        // Приоритет: jsdelivr (мягче CORS) → Hugging Face
-        env.remoteHost = 'https://cdn.jsdelivr.net/gh/Xenova/transformers.js@main/';
+        // ✅ Правильные настройки:
+        env.allowLocalModels = false;      // Не искать локально, грузить с HF
+        env.useBrowserCache = true;        // Кэшировать в IndexedDB
+        // ❌ НЕ устанавливаем remoteHost — он ломает пути к моделям
 
         const statusDiv = document.getElementById('status');
         const progressFill = document.getElementById('progress-fill');
@@ -43,11 +42,12 @@
         let pipe;
 
         async function loadModel() {
-            statusDiv.textContent = '⏳ Загрузка модели (~75 МБ)...';
+            statusDiv.textContent = '⏳ Загрузка модели (~45 МБ)...';
             try {
+                // ✅ Используем проверенную модель из onnx-community
                 pipe = await pipeline(
                     'token-classification',
-                    'Xenova/distilbert-base-multilingual-cased-finetuned-ner',
+                    'onnx-community/distilbert-base-multilingual-cased-finetuned-ner',
                     {
                         progress_callback: (e) => {
                             if (e.status === 'download' || e.status === 'progress') {
@@ -66,7 +66,13 @@
                 );
             } catch (err) {
                 console.error('Ошибка загрузки:', err);
-                statusDiv.textContent = '❌ Ошибка загрузки модели. Обновите страницу.';
+                if (err.message?.includes('404')) {
+                    statusDiv.innerHTML = '❌ Модель не найдена. Проверьте название или подключение.';
+                } else if (err.message?.includes('401') || err.message?.includes('CORS')) {
+                    statusDiv.innerHTML = '❌ Ошибка доступа. Убедитесь, что страница открыта через <code>https://</code>.';
+                } else {
+                    statusDiv.textContent = '❌ Ошибка загрузки. Обновите страницу.';
+                }
                 progressFill.style.background = '#ef4444';
             }
         }
@@ -86,7 +92,7 @@
             progressFill.style.background = '#10b981';
 
             try {
-                // Чанкование для стабильности
+                // Чанкование для стабильности на длинных текстах
                 const CHUNK_SIZE = 450, OVERLAP = 60;
                 const chunks = [];
                 for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
@@ -97,7 +103,10 @@
                 for (let idx = 0; idx < chunks.length; idx++) {
                     const chunk = chunks[idx];
                     progressFill.style.width = `${Math.round(((idx+1)/chunks.length)*100)}%`;
+                    
+                    // aggregation_strategy: 'simple' склеивает B-PER + I-PER автоматически
                     const results = await pipe(chunk.text, { aggregation_strategy: 'simple' });
+                    
                     for (const ent of results) {
                         allEntities.push({
                             start: ent.start + chunk.offset,
@@ -108,9 +117,11 @@
                     }
                 }
 
-                // Фильтрация и разрешение перекрытий
+                // Фильтрация по уверенности
                 const THRESHOLD = 0.65;
                 let filtered = allEntities.filter(e => e.score >= THRESHOLD);
+
+                // Разрешение перекрытий (оставляем сущность с большим score)
                 filtered.sort((a, b) => a.start - b.start);
                 const merged = [];
                 for (const ent of filtered) {
@@ -121,18 +132,23 @@
                     }
                 }
 
-                // Замена с конца, чтобы не сбить индексы
+                // Замена с конца, чтобы индексы не сбились
                 let result = text;
                 merged.reverse().forEach(ent => {
-                    const label = {PER:'ФИО',PERSON:'ФИО',ORG:'ОРГАНИЗАЦИЯ',LOC:'МЕСТО',GPE:'ЛОКАЦИЯ'}[ent.type] || ent.type;
+                    const label = {
+                        PER: 'ФИО', PERSON: 'ФИО', 
+                        ORG: 'ОРГАНИЗАЦИЯ', 
+                        LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ',
+                        MISC: 'ДРУГОЕ'
+                    }[ent.type] || ent.type.toUpperCase();
                     result = result.slice(0, ent.start) + `[${label}]` + result.slice(ent.end);
                 });
 
                 textarea.value = result;
                 statusDiv.textContent = `✅ Готово! Заменено ${merged.length} сущностей.`;
             } catch (err) {
-                console.error('Ошибка:', err);
-                statusDiv.textContent = '❌ Ошибка обработки.';
+                console.error('Ошибка обработки:', err);
+                statusDiv.textContent = '❌ Ошибка при обработке текста.';
                 progressFill.style.background = '#ef4444';
             } finally {
                 button.disabled = false;
