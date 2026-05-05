@@ -3,28 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (рабочая русская модель)</title>
+    <title>Анонимизатор (с отладкой)</title>
     <style>
-        :root { --primary: #2563eb; --success: #10b981; --error: #ef4444; --bg: #f8fafc; --card: #ffffff; }
-        body { font-family: system-ui, -apple-system, sans-serif; max-width: 850px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
+        :root { --primary: #2563eb; --success: #10b981; --error: #ef4444; --bg: #f8fafc; --card: #ffffff; --debug: #f1f5f9; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
         .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-        textarea { width: 100%; height: 220px; margin: 1rem 0; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; resize: vertical; background: #f8fafc; }
+        textarea { width: 100%; height: 200px; margin: 1rem 0; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; resize: vertical; background: #f8fafc; font-family: monospace; }
         textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
-        .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; }
-        button { padding: 0.7rem 1.4rem; font-size: 15px; font-weight: 500; cursor: pointer; border: none; border-radius: 8px; transition: all 0.2s; }
+        .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; margin: 0.5rem 0; }
+        button { padding: 0.6rem 1.2rem; font-size: 14px; font-weight: 500; cursor: pointer; border: none; border-radius: 6px; transition: all 0.2s; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         #loadBtn { background: var(--primary); color: white; }
-        #loadBtn:hover:not(:disabled) { background: #1d4ed8; }
         #runBtn { background: var(--success); color: white; }
-        #runBtn:hover:not(:disabled) { background: #059669; }
-        #status { margin: 0.8rem 0 0.2rem; font-weight: 500; min-height: 1.2rem; }
-        .progress { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-bottom: 1rem; }
+        #debugBtn { background: #64748b; color: white; }
+        #status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
+        .progress { width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; margin: 0.5rem 0; }
         .progress-bar { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s; }
         .progress-bar.success { background: var(--success); }
         .progress-bar.error { background: var(--error); }
+        
+        /* Блок отладки */
+        .debug-panel { 
+            background: var(--debug); 
+            border-radius: 8px; 
+            padding: 1rem; 
+            margin: 1rem 0; 
+            font-size: 0.85rem; 
+            display: none; 
+            max-height: 300px; 
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .debug-panel.show { display: block; }
+        .debug-row { margin: 0.3rem 0; padding: 0.3rem; background: white; border-radius: 4px; }
+        .debug-label { color: #64748b; font-weight: 500; }
+        .debug-value { color: #0f172a; }
+        .debug-highlight { background: #fef08a; padding: 0 2px; border-radius: 2px; }
+        
         .hint { font-size: 0.85rem; color: #64748b; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
         .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; display: none; }
-        .debug { font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -32,24 +51,28 @@
         <h1>🔒 Анонимизация текстов</h1>
         
         <div id="fileWarning" class="warning">
-            ⚠️ <strong>Ошибка протокола:</strong> Откройте через локальный сервер: 
-            <code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
+            ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
         </div>
 
         <div class="btn-group">
             <button id="loadBtn">🔄 Загрузить модель</button>
             <button id="runBtn" disabled>🔒 Анонимизировать</button>
+            <button id="debugBtn" disabled>🐛 Показать отладку</button>
         </div>
         
         <div id="status">Нажмите "Загрузить модель"</div>
         <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-        <div class="debug" id="debugUrl"></div>
         
-        <textarea id="inputText" disabled placeholder="Текст появится после загрузки модели..."></textarea>
+        <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО Яндекс. Телефон: +7 (999) 123-45-67</textarea>
+        
+        <!-- Панель отладки -->
+        <div class="debug-panel" id="debugPanel">
+            <strong>🔍 Отладочная информация:</strong>
+            <div id="debugContent"></div>
+        </div>
         
         <div class="hint">
             <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
-            <strong>Размер:</strong> ~80 МБ (загружается один раз, кэшируется в браузере)<br>
             <strong>Приватность:</strong> Все вычисления локально, данные не отправляются на сервер
         </div>
     </div>
@@ -57,26 +80,27 @@
     <script type="module">
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 
-        // Проверка на file:// протокол
         if (window.location.protocol === 'file:') {
             document.getElementById('fileWarning').style.display = 'block';
         }
 
-        // Настройки: НЕ переопределяем remoteHost, используем дефолтный HF CDN
         env.allowLocalModels = false;
         env.useBrowserCache = true;
 
         const loadBtn = document.getElementById('loadBtn');
         const runBtn = document.getElementById('runBtn');
+        const debugBtn = document.getElementById('debugBtn');
         const textarea = document.getElementById('inputText');
         const status = document.getElementById('status');
         const progressBar = document.getElementById('progressBar');
-        const debugUrl = document.getElementById('debugUrl');
+        const debugPanel = document.getElementById('debugPanel');
+        const debugContent = document.getElementById('debugContent');
 
         let pipe;
         let modelLoaded = false;
+        let lastDebugData = null;
 
-        // --- ЭТАП 1: Загрузка модели ---
+        // --- Загрузка модели ---
         loadBtn.addEventListener('click', async () => {
             loadBtn.disabled = true;
             loadBtn.textContent = '⏳ Загрузка...';
@@ -85,25 +109,18 @@
             progressBar.style.width = '10%';
 
             try {
-                // ✅ Используем подтверждённо существующую русскую NER-модель
                 const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
-                
-                // Показываем, какие файлы будут загружаться (для отладки)
-                debugUrl.textContent = `🔗 Загрузка с: https://huggingface.co/${MODEL_ID}/resolve/main/`;
                 
                 pipe = await pipeline(
                     'token-classification',
                     MODEL_ID,
                     {
-                        // Не используем quantized, так как эта модель уже оптимизирована
                         progress_callback: (e) => {
                             if (e.status === 'download' || e.status === 'progress') {
                                 if (e.total && e.loaded) {
                                     const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
                                     progressBar.style.width = `${pct}%`;
                                     status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
-                                } else {
-                                    status.textContent = `⏳ Загрузка: ${e.file || 'файлы модели'}...`;
                                 }
                             } else if (e.status === 'ready') {
                                 progressBar.style.width = '100%';
@@ -113,7 +130,6 @@
                     }
                 );
 
-                // Успех
                 modelLoaded = true;
                 progressBar.className = 'progress-bar success';
                 progressBar.style.width = '100%';
@@ -122,34 +138,19 @@
                 loadBtn.style.background = '#10b981';
                 textarea.disabled = false;
                 runBtn.disabled = false;
-                debugUrl.textContent = ''; // скрываем отладку после успеха
+                debugBtn.disabled = false;
                 
             } catch (err) {
                 console.error('Ошибка загрузки:', err);
                 progressBar.className = 'progress-bar error';
                 progressBar.style.width = '100%';
-                
-                // Показываем подробную ошибку
-                let errorMsg = err.message || String(err);
-                if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-                    status.innerHTML = '❌ Ошибка 401: модель требует авторизации или не публична.';
-                } else if (errorMsg.includes('404')) {
-                    status.textContent = '❌ Модель не найдена (404). Проверьте название.';
-                } else if (errorMsg.includes('Failed to fetch')) {
-                    status.innerHTML = '❌ Не удалось соединиться с сервером. Проверьте:<br>• Блокировщики рекламы (добавьте huggingface.co в исключения)<br>• Корпоративный фаервол';
-                } else {
-                    status.textContent = `❌ Ошибка: ${errorMsg}`;
-                }
-                
-                // Показываем полный стек для отладки
-                debugUrl.innerHTML = `<br>🔍 Детали: <pre style="margin:0.5em 0;font-size:0.75em">${err.stack || errorMsg}</pre>`;
-                
+                status.textContent = `❌ Ошибка: ${err.message}`;
                 loadBtn.disabled = false;
                 loadBtn.textContent = '🔄 Загрузить модель';
             }
         });
 
-        // --- ЭТАП 2: Обработка текста ---
+        // --- Обработка текста ---
         runBtn.addEventListener('click', async () => {
             const text = textarea.value.trim();
             if (!text) {
@@ -158,33 +159,50 @@
             }
 
             runBtn.disabled = true;
+            debugBtn.disabled = true;
             status.textContent = '⏳ Анализ...';
             progressBar.className = 'progress-bar';
             progressBar.style.width = '20%';
+            debugPanel.classList.remove('show');
+            lastDebugData = null;
 
             try {
-                // Простая обработка с агрегацией сущностей
-                const results = await pipe(text, { aggregation_strategy: 'simple' });
+                // Запускаем модель БЕЗ aggregation_strategy для отладки
+                // Это вернёт токены с точными позициями
+                const rawResults = await pipe(text, { 
+                    aggregation_strategy: 'none' // Получаем каждый токен отдельно
+                });
                 
-                // Фильтрация по уверенности
-                const THRESHOLD = 0.5;
+                // Логируем сырые данные для отладки
+                lastDebugData = {
+                    originalText: text,
+                    rawEntities: rawResults,
+                    processed: []
+                };
+                
+                // Группируем токены в сущности вручную (более надёжно для отладки)
+                const entities = groupTokensToEntities(rawResults);
+                lastDebugData.processed = entities;
+                
+                // Фильтрация и замена
+                const THRESHOLD = 0.3; // Снижаем порог для отладки
                 const labels = { 
-                    PER: 'ФИО', PERSON: 'ФИО', 
+                    PER: 'ФИО', PERSON: 'ФИО', LAST_NAME: 'ФАМИЛИЯ', 
+                    FIRST_NAME: 'ИМЯ', MIDDLE_NAME: 'ОТЧЕСТВО',
                     ORG: 'ОРГАНИЗАЦИЯ', ORGANIZATION: 'ОРГАНИЗАЦИЯ',
-                    LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', 
-                    MISC: 'ДРУГОЕ'
+                    LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ'
                 };
                 
                 let result = text;
                 let count = 0;
+                const debugLog = [];
                 
                 // Сортируем и убираем перекрытия
-                const entities = results
-                    .filter(e => e.score >= THRESHOLD)
-                    .sort((a, b) => a.start - b.start);
+                const valid = entities.filter(e => e.score >= THRESHOLD);
+                valid.sort((a, b) => a.start - b.start);
                 
                 const merged = [];
-                for (const e of entities) {
+                for (const e of valid) {
                     if (!merged.length || e.start >= merged[merged.length-1].end) {
                         merged.push(e);
                     } else if (e.score > merged[merged.length-1].score) {
@@ -192,18 +210,40 @@
                     }
                 }
                 
-                // Замена с конца (чтобы индексы не сбились)
+                // Замена с конца + логирование
                 for (let i = merged.length - 1; i >= 0; i--) {
                     const e = merged[i];
-                    const label = labels[e.entity_group] || e.entity_group?.toUpperCase() || 'СУЩНОСТЬ';
+                    const label = labels[e.type] || e.type?.toUpperCase() || 'СУЩНОСТЬ';
+                    const originalFragment = text.slice(e.start, e.end);
+                    
+                    debugLog.push({
+                        type: e.type,
+                        label: label,
+                        start: e.start,
+                        end: e.end,
+                        original: originalFragment,
+                        score: e.score.toFixed(3)
+                    });
+                    
                     result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
                     count++;
                 }
                 
+                // Сохраняем лог отладки
+                lastDebugData.debugLog = debugLog;
+                lastDebugData.finalResult = result;
+                
+                // Обновляем textarea
                 textarea.value = result;
                 progressBar.className = 'progress-bar success';
                 progressBar.style.width = '100%';
                 status.textContent = `✅ Готово! Заменено ${count} сущностей.`;
+                
+                // Авто-показ отладки если ничего не заменилось
+                if (count === 0) {
+                    showDebug();
+                    status.textContent += ' (ничего не найдено — см. отладку)';
+                }
                 
             } catch (err) {
                 console.error('Ошибка обработки:', err);
@@ -212,8 +252,117 @@
                 status.textContent = '❌ Ошибка при анализе текста.';
             } finally {
                 runBtn.disabled = false;
+                debugBtn.disabled = false;
             }
         });
+
+        // --- Группировка токенов в сущности ---
+        function groupTokensToEntities(tokens) {
+            if (!tokens || tokens.length === 0) return [];
+            
+            const entities = [];
+            let current = null;
+            
+            for (const token of tokens) {
+                // token.entity может быть: "B-PER", "I-PER", "O", "B-ORG" и т.д.
+                const entityFull = token.entity || token.entity_group || '';
+                const bioTag = entityFull.split('-')[0]; // B, I, O, U, L
+                const entityType = entityFull.split('-').slice(1).join('-') || entityFull;
+                
+                if (bioTag === 'B' || bioTag === 'U') {
+                    // Начало новой сущности
+                    if (current) entities.push(current);
+                    current = {
+                        start: token.start,
+                        end: token.end,
+                        type: entityType,
+                        score: token.score,
+                        tokens: [token]
+                    };
+                } else if (bioTag === 'I' && current && current.type === entityType) {
+                    // Продолжение текущей сущности
+                    current.end = token.end;
+                    current.score = Math.min(current.score, token.score);
+                    current.tokens.push(token);
+                } else if (bioTag === 'L' && current) {
+                    // Конец сущности
+                    current.end = token.end;
+                    current.score = Math.min(current.score, token.score);
+                    current.tokens.push(token);
+                    entities.push(current);
+                    current = null;
+                } else if (bioTag === 'O' || (current && current.type !== entityType)) {
+                    // Вне сущности или смена типа
+                    if (current) {
+                        entities.push(current);
+                        current = null;
+                    }
+                }
+            }
+            if (current) entities.push(current);
+            
+            return entities;
+        }
+
+        // --- Показать отладку ---
+        debugBtn.addEventListener('click', showDebug);
+        
+        function showDebug() {
+            if (!lastDebugData) {
+                debugContent.textContent = '❌ Нет данных для отладки. Сначала обработайте текст.';
+                debugPanel.classList.add('show');
+                return;
+            }
+            
+            const d = lastDebugData;
+            let html = `<div class="debug-row"><span class="debug-label">Исходный текст:</span> <span class="debug-value">${escapeHtml(d.originalText.substring(0, 200))}${d.originalText.length > 200 ? '...' : ''}</span></div>`;
+            
+            if (d.debugLog && d.debugLog.length > 0) {
+                html += `<div class="debug-row"><strong>✅ Найдено и заменено:</strong></div>`;
+                d.debugLog.forEach((item, idx) => {
+                    html += `<div class="debug-row">
+                        <span class="debug-label">#${idx + 1}</span> 
+                        Тип: <span class="debug-value">${item.type}</span> → 
+                        Метка: <span class="debug-value">${item.label}</span><br>
+                        Позиции: <span class="debug-value">${item.start}–${item.end}</span> | 
+                        Уверенность: <span class="debug-value">${item.score}</span><br>
+                        Было: <span class="debug-highlight">"${escapeHtml(item.original)}"</span>
+                    </div>`;
+                });
+            } else {
+                html += `<div class="debug-row"><span class="debug-label">⚠️ Сущности не найдены</span></div>`;
+            }
+            
+            if (d.rawEntities && d.rawEntities.length > 0) {
+                html += `<div class="debug-row"><strong>🔍 Сырые токены модели (первые 10):</strong></div>`;
+                d.rawEntities.slice(0, 10).forEach((t, idx) => {
+                    const fragment = d.originalText.slice(t.start, t.end);
+                    html += `<div class="debug-row">
+                        #${idx + 1}: <span class="debug-value">${t.entity || t.entity_group}</span> | 
+                        "${escapeHtml(fragment)}" | 
+                        [${t.start}–${t.end}] | 
+                        score: ${t.score?.toFixed(3)}
+                    </div>`;
+                });
+                if (d.rawEntities.length > 10) {
+                    html += `<div class="debug-row"><em>... и ещё ${d.rawEntities.length - 10} токенов</em></div>`;
+                }
+            }
+            
+            if (d.finalResult) {
+                html += `<div class="debug-row"><strong>📝 Результат:</strong><br><span class="debug-value">${escapeHtml(d.finalResult)}</span></div>`;
+            }
+            
+            debugContent.innerHTML = html;
+            debugPanel.classList.add('show');
+            debugPanel.scrollTop = 0;
+        }
+        
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
     </script>
 </body>
 </html>
