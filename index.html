@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Pyodide)</title>
+    <title>Анонимизатор (Pyodide + JS Hybrid)</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
         textarea { width: 100%; height: 300px; margin-bottom: 1em; padding: 0.5em; box-sizing: border-box; font-family: monospace; }
@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <h1>🔒 Анонимизация (Pyodide)</h1>
+    <h1>🔒 Анонимизация (Pyodide Lite)</h1>
     
     <div class="btn-group">
         <button id="initBtn">🐍 Загрузить Python</button>
@@ -26,15 +26,14 @@
     <div id="status">Нажмите "Загрузить Python"</div>
     <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
     
-    <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Паспорт: 4510 123456, ИНН 7701234567.</textarea>
+    <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Паспорт: 4510 123456.</textarea>
     
     <div class="note">
-        <strong>Как работает:</strong> Pyodide запускает Python в браузере → 
-        извлекает ФИО/организации через эвристики + regex → заменяет на маски. 
-        Все данные обрабатываются локально.
+        <strong>Как работает:</strong> Python (Pyodide) ищет ФИО по словарю, 
+        JavaScript ищет организации и документы по regex. 
+        Всё локально, безопасно.
     </div>
 
-    <!-- Pyodide -->
     <script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
     
     <script>
@@ -47,59 +46,61 @@
         const progressBar = document.getElementById('progressBar');
         const textarea = document.getElementById('inputText');
 
-        // === Инициализация Pyodide ===
+        // === 1. Инициализация Pyodide ===
         async function init() {
             initBtn.disabled = true;
             status.textContent = '⏳ Загрузка Pyodide...';
             progressBar.style.width = '10%';
 
             try {
-                // 1. Загружаем Pyodide
+                // Загружаем ядро
                 pyodide = await loadPyodide({
                     indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.2/full/'
                 });
-                progressBar.style.width = '40%';
-                status.textContent = '⏳ Загрузка micropip...';
+                
+                progressBar.style.width = '50%';
+                status.textContent = '⏳ Подготовка Python...';
 
-                // 2. Явно загружаем micropip (обязательно в Pyodide 0.27+)
+                // Загружаем micropip (обязательно для 0.27+)
                 await pyodide.loadPackage('micropip');
-                progressBar.style.width = '60%';
-                status.textContent = '⏳ Импорт модулей...';
 
-                // 3. Импортируем micropip и создаём функцию извлечения
+                // Создаём простую функцию поиска ФИО в Python
+                // Мы избегаем сложных regex в Python, чтобы не было проблем с кавычками
                 await pyodide.runPythonAsync(`
-                    import micropip
                     import re
-                    import json
                     
-                    # Словари для эвристики (русские имена/фамилии)
+                    # Простые словари для эвристики
                     FIRST_NAMES = {
-                        'иван','петр','александр','михаил','сергей','андрей','алексей','дмитрий','николай','владимир',
-                        'мария','анна','екатерина','елена','ольга','татьяна','наталья','светлана','юлия','дарья'
+                        'иван', 'петр', 'александр', 'михаил', 'сергей', 'андрей', 
+                        'алексей', 'дмитрий', 'николай', 'владимир', 'павел', 'константин',
+                        'мария', 'анна', 'елена', 'ольга', 'татьяна', 'наталья', 'светлана'
                     }
                     LAST_NAMES = {
-                        'иванов','петров','сидоров','смирнов','попов','козлов','новиков','морозов','волков','соловьев',
-                        'михайлов','федоров','романов','захаров','яковлев','соколов','васильев','григорьев'
+                        'иванов', 'петров', 'сидоров', 'смирнов', 'попов', 'козлов', 
+                        'новиков', 'морозов', 'волков', 'соколов', 'родина', 'чикарев', 'новиков'
                     }
-                    
-                    def extract(text):
-                        """Извлекает сущности через эвристики + regex"""
+
+                    def find_names(text):
+                        """Ищет последовательности слов с заглавной буквы и проверяет по словарю"""
                         entities = []
+                        # Паттерн: 2 или 3 слова с заглавной буквы (русские)
+                        pattern = re.compile(r'\\b([А-ЯЁ][а-яё]+(?:\\s+[А-ЯЁ][а-яё]+){1,2})\\b')
                         
-                        # Паттерн для ФИО: 2-3 слова с заглавной буквы
-                        fullname_re = re.compile(r'\\b([А-ЯЁ][а-яёё\\-]{2,30}(?:\\s+[А-ЯЁ][а-яёё\\-]{2,30}){1,2})\\b')
-                        for m in fullname_re.finditer(text):
+                        for m in pattern.finditer(text):
                             candidate = m.group(1)
-                            words = candidate.lower().replace('ё','е').split()
-                            # Эвристика: хотя бы одно слово из словаря
-                            if any(w.strip('.,!?:;') in FIRST_NAMES or w.strip('.,!?:;') in LAST_NAMES for w in words):
-                                entities.append({'text': candidate, 'type': 'PER', 'start': m.start(), 'end': m.end()})
-                        
-                        # Паттерн для организаций
-                        org_re = re.compile(r'\\b(?:ООО|ЗАО|ОАО|ПАО|ИП|АО)\\s*[«"]?[А-ЯЁ][А-ЯЁа-яёё\\s\\-.,&«»"'\\'#№]{2,60}[»"]?', re.I)
-                        for m in org_re.finditer(text):
-                            entities.append({'text': m.group(), 'type': 'ORG', 'start': m.start(), 'end': m.end()})
-                        
+                            words = candidate.lower().split()
+                            
+                            # Проверяем: есть ли хоть одно слово в словарях?
+                            # Это отсеивает "Город Москва" или "ООО Яндекс"
+                            has_name = any(w in FIRST_NAMES or w in LAST_NAMES for w in words)
+                            
+                            if has_name:
+                                entities.append({
+                                    'text': candidate, 
+                                    'type': 'PER', 
+                                    'start': m.start(), 
+                                    'end': m.end()
+                                })
                         return entities
                 `);
                 
@@ -118,7 +119,7 @@
             }
         }
 
-        // === Анонимизация ===
+        // === 2. Анонимизация (Гибрид JS + Python) ===
         async function anonymize() {
             const text = textarea.value.trim();
             if (!text || !ready) return;
@@ -127,37 +128,49 @@
             status.textContent = '⏳ Анализ...';
             
             try {
-                // 1. Извлекаем сущности через Python
-                const entities = await pyodide.runPythonAsync(`extract(${JSON.stringify(text)})`).then(r => r.toJs());
+                let allEntities = [];
+
+                // А. Поиск ФИО через Python (умная эвристика)
+                const pyNames = await pyodide.runPythonAsync(`find_names(${JSON.stringify(text)})`).then(r => r.toJs());
+                allEntities = allEntities.concat(pyNames);
+
+                // Б. Поиск остального через JS Regex (быстро и надёжно)
                 
-                // 2. Добавляем структурированные данные (regex в JS — быстрее)
-                const patterns = [
+                // Организации
+                const orgRe = /\b(?:ООО|ЗАО|ОАО|ПАО|ИП|АО)\s*[«"]?[А-ЯЁ][А-ЯЁа-яё\s\-\.,&«»"'#№]{2,60}[»"]?/gi;
+                for (const m of text.matchAll(orgRe)) {
+                    allEntities.push({ text: m[0], type: 'ОРГАНИЗАЦИЯ', start: m.index, end: m.index + m[0].length });
+                }
+
+                // Документы и прочее
+                const structRules = [
                     { re: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi, label: 'ПАСПОРТ' },
                     { re: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi, label: 'ИНН' },
                     { re: /(?:ОГРН[ИП]?\s*:?\s*)?\d{13,15}\b/gi, label: 'ОГРН' },
                     { re: /(?:СНИЛС\s*:?\s*)?(?:\d{3}-\d{3}-\d{3}\s?\d{2}|\d{11})\b/gi, label: 'СНИЛС' },
-                    { re: /(?:ул\.|улица|пр-кт|д\.|дом|кв\.|квартира)\s+[А-ЯЁа-яёё\d\s\-\.,«»"'#№]{3,50}/gi, label: 'АДРЕС' }
+                    { re: /(?:ул\.|улица|пр-кт|проспект|пер\.|д\.|дом|кв\.|квартира)\s+[А-ЯЁа-яё\d\s\-\.,«»"'#№]{3,50}/gi, label: 'АДРЕС' }
                 ];
-                
-                for (const p of patterns) {
-                    p.re.lastIndex = 0;
-                    for (const m of text.matchAll(p.re)) {
-                        entities.push({ text: m[0], type: p.label, start: m.index, end: m.index + m[0].length });
+
+                for (const rule of structRules) {
+                    rule.re.lastIndex = 0;
+                    for (const m of text.matchAll(rule.re)) {
+                        allEntities.push({ text: m[0], type: rule.label, start: m.index, end: m.index + m[0].length });
                     }
                 }
-                
-                // 3. Сортируем и убираем перекрытия
-                entities.sort((a, b) => a.start - b.start);
+
+                // В. Сортировка и удаление перекрытий
+                allEntities.sort((a, b) => a.start - b.start);
                 const merged = [];
-                for (const e of entities) {
-                    if (!merged.length || e.start >= merged[merged.length-1].end) {
+                for (const e of allEntities) {
+                    if (!merged.length || e.start >= merged[merged.length - 1].end) {
                         merged.push(e);
                     }
                 }
-                
-                // 4. Заменяем (с конца)
+
+                // Г. Замена (с конца текста)
                 let result = text;
-                const labels = { PER: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ', LOC: 'МЕСТО' };
+                const labels = { PER: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ' };
+                
                 merged.reverse().forEach(e => {
                     const label = labels[e.type] || e.type;
                     result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
@@ -174,7 +187,6 @@
             }
         }
 
-        // === Обработчики ===
         initBtn.addEventListener('click', init);
         runBtn.addEventListener('click', anonymize);
     </script>
