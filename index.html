@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Wikineural NER)</title>
+    <title>Анонимизатор (Wikineural NER - Квантованная)</title>
     <style>
         :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --card: #fff; }
         body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
@@ -52,7 +52,7 @@
         <textarea id="inputText" disabled placeholder="Вставьте текст..."></textarea>
         <div class="debug" id="debugPanel"></div>
         <div class="hint">
-            <strong>Модель:</strong> <code>Babelscape/wikineural-multilingual-ner</code> (ONNX).<br>
+            <strong>Модель:</strong> <code>jdp8/wikineural-multilingual-ner</code> (ONNX, квантованная).<br>
             Поддерживает русский язык, падежные формы и длинные тексты.
         </div>
     </div>
@@ -62,9 +62,9 @@
         // 📦 КОНФИГУРАЦИЯ
         // ==========================================
         const CONFIG = {
-            // ✅ РАБОЧАЯ МОДЕЛЬ: Babelscape/wikineural-multilingual-ner
-            modelId: 'Babelscape/wikineural-multilingual-ner',
-            nerThreshold: 0.3, // Чуть выше, так как модель точнее
+            // ✅ РАБОЧАЯ МОДЕЛЬ: jdp8/wikineural-multilingual-ner
+            modelId: 'jdp8/wikineural-multilingual-ner',
+            nerThreshold: 0.3, 
             chunkSize: 450,
             overlap: 70,
             labels: {
