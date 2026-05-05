@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Gherman BERT - Fixed)</title>
+    <title>Анонимизатор (Gherman BERT - Final Fix)</title>
     <style>
         :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --card: #fff; }
         body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
@@ -30,7 +30,7 @@
 </head>
 <body>
     <div class="card">
-        <h1>🔒 Анонимизация (Gherman BERT - Fixed)</h1>
+        <h1>🔒 Анонимизация (Gherman BERT - Final)</h1>
         <div id="fileWarning" class="warning">⚠️ Запустите через: <code>python -m http.server 8000</code></div>
 
         <div class="rules-panel" id="rulesPanel">
@@ -52,7 +52,7 @@
         <textarea id="inputText" disabled placeholder="Вставьте текст...">Иванов Иван Петрович из Москвы работает в ООО Яндекс.</textarea>
         <div class="debug" id="debugPanel"></div>
         <div class="hint">
-            <strong>Исправлено:</strong> Чтение типа из поля <code>entity</code>, очистка префиксов BIOLU, добавлен regex для организаций.
+            <strong>Исправлено:</strong> Ручная сборка BIOLU-токенов, корректный маппинг из конфига.
         </div>
     </div>
 
@@ -62,11 +62,17 @@
             nerThreshold: 0.5,
             chunkSize: 450,
             overlap: 60,
-            // Маппинг чистых типов (без B-, I-)
+            // Маппинг чистых типов (без префиксов B-, I-) из вашего конфига
             labels: {
-                'LAST_NAME': 'ФАМИЛИЯ', 'FIRST_NAME': 'ИМЯ', 'MIDDLE_NAME': 'ОТЧЕСТВО',
-                'COUNTRY': 'СТРАНА', 'REGION': 'РЕГИОН', 'CITY': 'ГОРОД',
-                'DISTRICT': 'РАЙОН', 'STREET': 'УЛИЦА', 'HOUSE': 'ДОМ',
+                'LAST_NAME': 'ФАМИЛИЯ', 
+                'FIRST_NAME': 'ИМЯ', 
+                'MIDDLE_NAME': 'ОТЧЕСТВО',
+                'COUNTRY': 'СТРАНА', 
+                'REGION': 'РЕГИОН', 
+                'CITY': 'ГОРОД',
+                'DISTRICT': 'РАЙОН', 
+                'STREET': 'УЛИЦА', 
+                'HOUSE': 'ДОМ',
                 'MISC': 'ДРУГОЕ'
             },
             // Паттерны для Организаций и Документов (модель их не видит)
@@ -150,8 +156,7 @@
                     for (let i = 0; i < chunks.length; i++) {
                         progressBar.style.width = `${5 + Math.round(((i + 1) / chunks.length) * 40)}%`;
                         
-                        // Важно: используем aggregation_strategy: 'none' чтобы получить все токены и собрать их вручную
-                        // Так надежнее для этой модели
+                        // Используем 'none' чтобы получить сырые токены с BIOLU-тегами
                         const res = await pipe(chunks[i].text, { aggregation_strategy: 'none' });
                         
                         if (!rawSampleLogged && res.length > 0) {
@@ -163,7 +168,7 @@
                             rawSampleLogged = true;
                         }
 
-                        // Ручная сборка сущностей из токенов
+                        // Ручная сборка сущностей
                         let currentEntity = null;
                         for (const token of res) {
                             const rawLabel = token.entity; // например "B-CITY"
@@ -175,9 +180,12 @@
                                 continue;
                             }
 
-                            const parts = rawLabel.split('-');
-                            const prefix = parts[0]; // B, I, L, U
-                            const type = parts.slice(1).join('-'); // CITY, LAST_NAME...
+                            // Парсим BIOLU
+                            const dashIndex = rawLabel.indexOf('-');
+                            if (dashIndex === -1) continue; // Неверный формат
+                            
+                            const prefix = rawLabel.substring(0, dashIndex); // B, I, L, U
+                            const type = rawLabel.substring(dashIndex + 1); // CITY, LAST_NAME...
                             const cleanType = CONFIG.labels[type];
 
                             if (!cleanType) {
@@ -193,6 +201,7 @@
                                 continue;
                             }
 
+                            // Логика сборки
                             if (prefix === 'B' || prefix === 'U') {
                                 if (currentEntity) allEntities.push(currentEntity);
                                 currentEntity = {
@@ -208,7 +217,12 @@
                                     currentEntity.end = token.end + chunks[i].offset;
                                     currentEntity.text += token.word;
                                     currentEntity.score = Math.min(currentEntity.score, token.score);
+                                    if (prefix === 'L') {
+                                        allEntities.push(currentEntity);
+                                        currentEntity = null;
+                                    }
                                 } else {
+                                    // Разрыв контекста или смена типа
                                     if (currentEntity) allEntities.push(currentEntity);
                                     currentEntity = {
                                         start: token.start + chunks[i].offset,
@@ -241,7 +255,7 @@
                     }
                 }
 
-                // 3. Слияние ФИО
+                // 3. Слияние ФИО (склеиваем Фамилию+Имя+Отчество)
                 allEntities.sort((a, b) => a.start - b.start);
                 const merged = [];
                 for (const ent of allEntities) {
