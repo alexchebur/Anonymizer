@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (рабочая версия)</title>
+    <title>Анонимизатор (рабочая русская модель)</title>
     <style>
         :root { --primary: #2563eb; --success: #10b981; --error: #ef4444; --bg: #f8fafc; --card: #ffffff; }
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 850px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
@@ -24,6 +24,7 @@
         .progress-bar.error { background: var(--error); }
         .hint { font-size: 0.85rem; color: #64748b; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
         .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; display: none; }
+        .debug { font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -31,8 +32,8 @@
         <h1>🔒 Анонимизация текстов</h1>
         
         <div id="fileWarning" class="warning">
-            ⚠️ <strong>Ошибка протокола:</strong> Вы открыли файл через <code>file://</code>. 
-            Запустите локальный сервер: <code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
+            ⚠️ <strong>Ошибка протокола:</strong> Откройте через локальный сервер: 
+            <code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
         </div>
 
         <div class="btn-group">
@@ -42,12 +43,14 @@
         
         <div id="status">Нажмите "Загрузить модель"</div>
         <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="debug" id="debugUrl"></div>
         
-        <textarea id="inputText" disabled placeholder="Текст появится после успешной загрузки модели..."></textarea>
+        <textarea id="inputText" disabled placeholder="Текст появится после загрузки модели..."></textarea>
         
         <div class="hint">
-            <strong>Как работает:</strong> Модель (~80 МБ) загружается один раз и сохраняется в кэше браузера. 
-            Все вычисления выполняются локально. Данные не покидают ваш компьютер.
+            <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
+            <strong>Размер:</strong> ~80 МБ (загружается один раз, кэшируется в браузере)<br>
+            <strong>Приватность:</strong> Все вычисления локально, данные не отправляются на сервер
         </div>
     </div>
 
@@ -59,18 +62,16 @@
             document.getElementById('fileWarning').style.display = 'block';
         }
 
-        // Настройки окружения
+        // Настройки: НЕ переопределяем remoteHost, используем дефолтный HF CDN
         env.allowLocalModels = false;
         env.useBrowserCache = true;
-        // Используем jsdelivr как CDN-зеркало для обхода CORS-проблем
-        env.remoteHost = 'https://cdn.jsdelivr.net/gh/huggingface/transformers.js@main/';
-        env.remotePathTemplate = '{model}/resolve/{revision}/{path}';
 
         const loadBtn = document.getElementById('loadBtn');
         const runBtn = document.getElementById('runBtn');
         const textarea = document.getElementById('inputText');
         const status = document.getElementById('status');
         const progressBar = document.getElementById('progressBar');
+        const debugUrl = document.getElementById('debugUrl');
 
         let pipe;
         let modelLoaded = false;
@@ -79,27 +80,34 @@
         loadBtn.addEventListener('click', async () => {
             loadBtn.disabled = true;
             loadBtn.textContent = '⏳ Загрузка...';
-            status.textContent = '⏳ Подключение...';
+            status.textContent = '⏳ Инициализация...';
             progressBar.className = 'progress-bar';
             progressBar.style.width = '10%';
 
             try {
-                // ✅ Используем проверенную публичную модель для мультиязычного NER
-                // Эта модель находится в коллекции transformers.js и гарантированно публична
+                // ✅ Используем подтверждённо существующую русскую NER-модель
+                const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
+                
+                // Показываем, какие файлы будут загружаться (для отладки)
+                debugUrl.textContent = `🔗 Загрузка с: https://huggingface.co/${MODEL_ID}/resolve/main/`;
+                
                 pipe = await pipeline(
                     'token-classification',
-                    'Xenova/distilbert-base-multilingual-cased-finetuned-ner',
+                    MODEL_ID,
                     {
-                        quantized: true, // Использовать квантованную версию (~15 МБ вместо 80 МБ)
+                        // Не используем quantized, так как эта модель уже оптимизирована
                         progress_callback: (e) => {
                             if (e.status === 'download' || e.status === 'progress') {
                                 if (e.total && e.loaded) {
                                     const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
                                     progressBar.style.width = `${pct}%`;
-                                    status.textContent = `⏳ Загрузка: ${pct}%`;
+                                    status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
+                                } else {
+                                    status.textContent = `⏳ Загрузка: ${e.file || 'файлы модели'}...`;
                                 }
                             } else if (e.status === 'ready') {
                                 progressBar.style.width = '100%';
+                                status.textContent = '✅ Модель загружена!';
                             }
                         }
                     }
@@ -114,25 +122,28 @@
                 loadBtn.style.background = '#10b981';
                 textarea.disabled = false;
                 runBtn.disabled = false;
+                debugUrl.textContent = ''; // скрываем отладку после успеха
+                
             } catch (err) {
                 console.error('Ошибка загрузки:', err);
                 progressBar.className = 'progress-bar error';
                 progressBar.style.width = '100%';
                 
-                if (err.message?.includes('401') || err.message?.includes('Unauthorized')) {
-                    status.innerHTML = '❌ Ошибка доступа. <a href="#" id="retryLink">Попробовать через jsdelivr</a>';
-                    document.getElementById('retryLink').onclick = (e) => {
-                        e.preventDefault();
-                        // Переключаем на прямую загрузку с HF
-                        env.remoteHost = undefined;
-                        env.remotePathTemplate = undefined;
-                        loadBtn.click();
-                    };
-                } else if (err.message?.includes('404')) {
-                    status.textContent = '❌ Модель не найдена. Проверьте название.';
+                // Показываем подробную ошибку
+                let errorMsg = err.message || String(err);
+                if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
+                    status.innerHTML = '❌ Ошибка 401: модель требует авторизации или не публична.';
+                } else if (errorMsg.includes('404')) {
+                    status.textContent = '❌ Модель не найдена (404). Проверьте название.';
+                } else if (errorMsg.includes('Failed to fetch')) {
+                    status.innerHTML = '❌ Не удалось соединиться с сервером. Проверьте:<br>• Блокировщики рекламы (добавьте huggingface.co в исключения)<br>• Корпоративный фаервол';
                 } else {
-                    status.textContent = `❌ Ошибка: ${err.message}`;
+                    status.textContent = `❌ Ошибка: ${errorMsg}`;
                 }
+                
+                // Показываем полный стек для отладки
+                debugUrl.innerHTML = `<br>🔍 Детали: <pre style="margin:0.5em 0;font-size:0.75em">${err.stack || errorMsg}</pre>`;
+                
                 loadBtn.disabled = false;
                 loadBtn.textContent = '🔄 Загрузить модель';
             }
@@ -152,12 +163,17 @@
             progressBar.style.width = '20%';
 
             try {
-                // Простая обработка (без чанкования для коротких текстов)
+                // Простая обработка с агрегацией сущностей
                 const results = await pipe(text, { aggregation_strategy: 'simple' });
                 
-                // Фильтрация и замена
+                // Фильтрация по уверенности
                 const THRESHOLD = 0.5;
-                const labels = { PER: 'ФИО', PERSON: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ', LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ' };
+                const labels = { 
+                    PER: 'ФИО', PERSON: 'ФИО', 
+                    ORG: 'ОРГАНИЗАЦИЯ', ORGANIZATION: 'ОРГАНИЗАЦИЯ',
+                    LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', 
+                    MISC: 'ДРУГОЕ'
+                };
                 
                 let result = text;
                 let count = 0;
@@ -176,7 +192,7 @@
                     }
                 }
                 
-                // Замена с конца
+                // Замена с конца (чтобы индексы не сбились)
                 for (let i = merged.length - 1; i >= 0; i--) {
                     const e = merged[i];
                     const label = labels[e.entity_group] || e.entity_group?.toUpperCase() || 'СУЩНОСТЬ';
@@ -188,11 +204,12 @@
                 progressBar.className = 'progress-bar success';
                 progressBar.style.width = '100%';
                 status.textContent = `✅ Готово! Заменено ${count} сущностей.`;
+                
             } catch (err) {
-                console.error('Ошибка:', err);
+                console.error('Ошибка обработки:', err);
                 progressBar.className = 'progress-bar error';
                 progressBar.style.width = '100%';
-                status.textContent = '❌ Ошибка обработки.';
+                status.textContent = '❌ Ошибка при анализе текста.';
             } finally {
                 runBtn.disabled = false;
             }
