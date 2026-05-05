@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Pyodide + Natasha)</title>
+    <title>Анонимизатор (Pyodide)</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
         textarea { width: 100%; height: 300px; margin-bottom: 1em; padding: 0.5em; box-sizing: border-box; font-family: monospace; }
@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <h1>🔒 Анонимизация (Natasha)</h1>
+    <h1>🔒 Анонимизация (Pyodide)</h1>
     
     <div class="btn-group">
         <button id="initBtn">🐍 Загрузить Python</button>
@@ -29,8 +29,8 @@
     <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО Яндекс в Москве. Паспорт: 4510 123456, ИНН 7701234567.</textarea>
     
     <div class="note">
-        <strong>Как работает:</strong> Pyodide запускает Python в браузере → устанавливает natasha → 
-        извлекает ФИО/организации/локации → заменяет на маски. 
+        <strong>Как работает:</strong> Pyodide запускает Python в браузере → 
+        извлекает ФИО/организации через эвристики + regex → заменяет на маски. 
         Все данные обрабатываются локально.
     </div>
 
@@ -47,7 +47,7 @@
         const progressBar = document.getElementById('progressBar');
         const textarea = document.getElementById('inputText');
 
-        // === Инициализация Pyodide + Natasha ===
+        // === Инициализация Pyodide ===
         async function init() {
             initBtn.disabled = true;
             status.textContent = '⏳ Загрузка Pyodide...';
@@ -59,35 +59,48 @@
                     indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.2/full/'
                 });
                 progressBar.style.width = '40%';
-                status.textContent = '⏳ Установка пакетов...';
+                status.textContent = '⏳ Загрузка micropip...';
 
-                // 2. Устанавливаем natasha + зависимости
+                // 2. Явно загружаем micropip (обязательно в Pyodide 0.27+)
+                await pyodide.loadPackage('micropip');
+                progressBar.style.width = '60%';
+                status.textContent = '⏳ Импорт модулей...';
+
+                // 3. Импортируем micropip и создаём функцию извлечения
                 await pyodide.runPythonAsync(`
                     import micropip
-                    await micropip.install(['natasha', 'pymorphy2', 'pymorphy2-dicts-ru', 'razdel'])
-                `);
-                progressBar.style.width = '70%';
-                status.textContent = '⏳ Загрузка моделей...';
-
-                // 3. Импортируем и создаём функцию извлечения
-                await pyodide.runPythonAsync(`
-                    from natasha import Segmenter, MorphVocab, NewsEmbedding, NewsMorphTagger, NewsNER, Doc
+                    import re
+                    import json
                     
-                    segmenter = Segmenter()
-                    morph_vocab = MorphVocab()
-                    emb = NewsEmbedding()
-                    morph_tagger = NewsMorphTagger(emb)
-                    ner = NewsNER(emb)
+                    # Словари для эвристики (русские имена/фамилии)
+                    FIRST_NAMES = {
+                        'иван','петр','александр','михаил','сергей','андрей','алексей','дмитрий','николай','владимир',
+                        'мария','анна','екатерина','елена','ольга','татьяна','наталья','светлана','юлия','дарья'
+                    }
+                    LAST_NAMES = {
+                        'иванов','петров','сидоров','смирнов','попов','козлов','новиков','морозов','волков','соловьев',
+                        'михайлов','федоров','романов','захаров','яковлев','соколов','васильев','григорьев'
+                    }
                     
                     def extract(text):
-                        doc = Doc(text)
-                        doc.segment(segmenter)
-                        doc.tag_morph(morph_tagger)
-                        doc.tag_ner(ner)
-                        return [
-                            {'text': s.text, 'type': s.type, 'start': s.start, 'end': s.end}
-                            for s in doc.spans if s.type in ('PER', 'ORG', 'LOC')
-                        ]
+                        """Извлекает сущности через эвристики + regex"""
+                        entities = []
+                        
+                        # Паттерн для ФИО: 2-3 слова с заглавной буквы
+                        fullname_re = re.compile(r'\\b([А-ЯЁ][а-яёё\\-]{2,30}(?:\\s+[А-ЯЁ][а-яёё\\-]{2,30}){1,2})\\b')
+                        for m in fullname_re.finditer(text):
+                            candidate = m.group(1)
+                            words = candidate.lower().replace('ё','е').split()
+                            # Эвристика: хотя бы одно слово из словаря
+                            if any(w.strip('.,!?:;') in FIRST_NAMES or w.strip('.,!?:;') in LAST_NAMES for w in words):
+                                entities.append({'text': candidate, 'type': 'PER', 'start': m.start(), 'end': m.end()})
+                        
+                        # Паттерн для организаций
+                        org_re = re.compile(r'\\b(?:ООО|ЗАО|ОАО|ПАО|ИП|АО)\\s*[«"]?[А-ЯЁ][А-ЯЁа-яёё\\s\\-.,&«»"'\\'#№]{2,60}[»"]?', re.I)
+                        for m in org_re.finditer(text):
+                            entities.append({'text': m.group(), 'type': 'ORG', 'start': m.start(), 'end': m.end()})
+                        
+                        return entities
                 `);
                 
                 progressBar.style.width = '100%';
@@ -114,16 +127,16 @@
             status.textContent = '⏳ Анализ...';
             
             try {
-                // 1. Извлекаем сущности через Natasha
+                // 1. Извлекаем сущности через Python
                 const entities = await pyodide.runPythonAsync(`extract(${JSON.stringify(text)})`).then(r => r.toJs());
                 
-                // 2. Добавляем структурированные данные (regex)
+                // 2. Добавляем структурированные данные (regex в JS — быстрее)
                 const patterns = [
                     { re: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi, label: 'ПАСПОРТ' },
                     { re: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi, label: 'ИНН' },
                     { re: /(?:ОГРН[ИП]?\s*:?\s*)?\d{13,15}\b/gi, label: 'ОГРН' },
                     { re: /(?:СНИЛС\s*:?\s*)?(?:\d{3}-\d{3}-\d{3}\s?\d{2}|\d{11})\b/gi, label: 'СНИЛС' },
-                    { re: /(?:ул\.|улица|пр-кт|д\.|дом|кв\.|квартира)\s+[А-ЯЁа-яё\d\s\-\.,«»"'#№]{3,50}/gi, label: 'АДРЕС' }
+                    { re: /(?:ул\.|улица|пр-кт|д\.|дом|кв\.|квартира)\s+[А-ЯЁа-яёё\d\s\-\.,«»"'#№]{3,50}/gi, label: 'АДРЕС' }
                 ];
                 
                 for (const p of patterns) {
@@ -142,7 +155,7 @@
                     }
                 }
                 
-                // 4. Заменяем (с конца, чтобы индексы не сбились)
+                // 4. Заменяем (с конца)
                 let result = text;
                 const labels = { PER: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ', LOC: 'МЕСТО' };
                 merged.reverse().forEach(e => {
