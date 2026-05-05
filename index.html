@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (Чистый NER)</title>
+    <title>Анонимизатор (Wikineural NER)</title>
     <style>
         :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --card: #fff; }
         body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
@@ -30,7 +30,7 @@
 </head>
 <body>
     <div class="card">
-        <h1>🔒 Анонимизация (Чистый NER)</h1>
+        <h1>🔒 Анонимизация (Wikineural NER)</h1>
         <div id="fileWarning" class="warning">⚠️ Запустите через: <code>python -m http.server 8000</code></div>
 
         <div class="rules-panel" id="rulesPanel">
@@ -52,30 +52,27 @@
         <textarea id="inputText" disabled placeholder="Вставьте текст..."></textarea>
         <div class="debug" id="debugPanel"></div>
         <div class="hint">
-            <strong>Как работает:</strong> Полностью на базе NER-модели. 
-            Поддерживает падежные формы, автоматическое чанкование длинных текстов и слияние разбитых сущностей.
+            <strong>Модель:</strong> <code>Babelscape/wikineural-multilingual-ner</code> (ONNX).<br>
+            Поддерживает русский язык, падежные формы и длинные тексты.
         </div>
     </div>
 
     <script type="module">
         // ==========================================
-        // 📦 КОНФИГУРАЦИЯ (легко менять модель)
+        // 📦 КОНФИГУРАЦИЯ
         // ==========================================
         const CONFIG = {
-            // Модель: мультиязычная лучше справляется с морфологией русского
-            modelId: 'Xenova/distilbert-base-multilingual-cased-finetuned-ner',
-            nerThreshold: 0.25, // Понижен для склонённых форм
-            chunkSize: 420,
+            // ✅ РАБОЧАЯ МОДЕЛЬ: Babelscape/wikineural-multilingual-ner
+            modelId: 'Babelscape/wikineural-multilingual-ner',
+            nerThreshold: 0.3, // Чуть выше, так как модель точнее
+            chunkSize: 450,
             overlap: 70,
-            // Маппинг типов
             labels: {
                 PER: 'ФИО', PERSON: 'ФИО', 
                 ORG: 'ОРГАНИЗАЦИЯ', ORGANIZATION: 'ОРГАНИЗАЦИЯ',
                 LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ',
-                // Структурированные типы
                 PASSPORT: 'ПАСПОРТ', INN: 'ИНН', OGRN: 'ОГРН', SNILS: 'СНИЛС', ADDRESS: 'АДРЕС'
             },
-            // Regex только для структурированных данных (не для ФИО!)
             structPatterns: [
                 { id: 'PASSPORT', label: 'ПАСПОРТ', pattern: /(?:серия\s*)?\d{2}\s*\d{2}\s*(?:номер\s*)?\d{6}/gi },
                 { id: 'INN', label: 'ИНН', pattern: /(?:ИНН\s*:?\s*)?\d{10,12}\b/gi },
@@ -125,6 +122,7 @@
                 loadBtn.textContent = '✅ Загружено'; loadBtn.style.background = '#10b981';
                 textarea.disabled = false; runBtn.disabled = false;
             } catch (err) {
+                console.error(err);
                 progressBar.className = 'progress-bar error'; progressBar.style.width = '100%';
                 status.textContent = `❌ Ошибка: ${err.message}`;
                 loadBtn.disabled = false; loadBtn.textContent = '🔄 Загрузить модель';
@@ -143,7 +141,7 @@
             try {
                 const allEntities = [];
 
-                // 1. NER (чанкование для длинных текстов)
+                // 1. NER (чанкование)
                 if ((types.has('PER') || types.has('ORG') || types.has('LOC')) && pipe) {
                     const { chunkSize, overlap } = CONFIG;
                     const chunks = [];
@@ -175,7 +173,7 @@
                     }
                 }
 
-                // 2. Структурированные паттерны (только если включено)
+                // 2. Структурированные паттерны
                 if (types.has('struct')) {
                     for (const rule of CONFIG.structPatterns) {
                         rule.pattern.lastIndex = 0;
@@ -188,17 +186,15 @@
                     }
                 }
 
-                // 3. Умное слияние соседних сущностей (для падежей и разбитых токенов)
+                // 3. Слияние соседних сущностей
                 allEntities.sort((a, b) => a.start - b.start);
                 const merged = [];
                 for (const ent of allEntities) {
                     if (!merged.length || ent.start > merged[merged.length - 1].end + 2) {
                         merged.push(ent);
                     } else {
-                        // Пересечение или близость ≤2 символов → объединяем
                         const last = merged[merged.length - 1];
                         if (ent.type === last.type) {
-                            // Расширяем границы, берём max score
                             last.end = Math.max(last.end, ent.end);
                             last.start = Math.min(last.start, ent.start);
                             last.score = Math.max(last.score, ent.score);
@@ -213,7 +209,7 @@
                 lastDebug = `🔍 Найдено сущностей: ${merged.length}\n`;
                 lastDebug += merged.map((e, i) => `#${i+1} [${e.source}] ${e.type} "${e.text.substring(0,30)}${e.text.length>30?'...':''}" (${e.start}-${e.end}) conf:${e.score.toFixed(2)}`).join('\n') + '\n\n';
 
-                // 4. Замена (с конца)
+                // 4. Замена
                 let result = text;
                 merged.reverse().forEach(e => {
                     result = result.slice(0, e.start) + `[${e.type}]` + result.slice(e.end);
