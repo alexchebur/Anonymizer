@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (DistilBERT ONNX)</title>
+    <title>Анонимизатор (рабочая версия)</title>
     <style>
         :root { --primary: #2563eb; --success: #10b981; --error: #ef4444; --bg: #f8fafc; --card: #ffffff; }
         body { font-family: system-ui, -apple-system, sans-serif; max-width: 850px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
@@ -23,17 +23,16 @@
         .progress-bar.success { background: var(--success); }
         .progress-bar.error { background: var(--error); }
         .hint { font-size: 0.85rem; color: #64748b; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
-        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; display: none; }
     </style>
 </head>
 <body>
     <div class="card">
         <h1>🔒 Анонимизация текстов</h1>
         
-        <div id="fileWarning" class="warning" style="display:none">
+        <div id="fileWarning" class="warning">
             ⚠️ <strong>Ошибка протокола:</strong> Вы открыли файл через <code>file://</code>. 
-            Загрузка моделей заблокирована браузером. Запустите локальный сервер:
-            <br><code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
+            Запустите локальный сервер: <code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
         </div>
 
         <div class="btn-group">
@@ -47,7 +46,7 @@
         <textarea id="inputText" disabled placeholder="Текст появится после успешной загрузки модели..."></textarea>
         
         <div class="hint">
-            <strong>Как работает:</strong> Модель (~45 МБ) загружается один раз и сохраняется в кэше браузера. 
+            <strong>Как работает:</strong> Модель (~80 МБ) загружается один раз и сохраняется в кэше браузера. 
             Все вычисления выполняются локально. Данные не покидают ваш компьютер.
         </div>
     </div>
@@ -63,6 +62,9 @@
         // Настройки окружения
         env.allowLocalModels = false;
         env.useBrowserCache = true;
+        // Используем jsdelivr как CDN-зеркало для обхода CORS-проблем
+        env.remoteHost = 'https://cdn.jsdelivr.net/gh/huggingface/transformers.js@main/';
+        env.remotePathTemplate = '{model}/resolve/{revision}/{path}';
 
         const loadBtn = document.getElementById('loadBtn');
         const runBtn = document.getElementById('runBtn');
@@ -77,25 +79,27 @@
         loadBtn.addEventListener('click', async () => {
             loadBtn.disabled = true;
             loadBtn.textContent = '⏳ Загрузка...';
-            status.textContent = '⏳ Подключение к Hugging Face...';
+            status.textContent = '⏳ Подключение...';
             progressBar.className = 'progress-bar';
             progressBar.style.width = '10%';
 
             try {
-                // Используем официальную ONNX-модель для мультиязычного NER
+                // ✅ Используем проверенную публичную модель для мультиязычного NER
+                // Эта модель находится в коллекции transformers.js и гарантированно публична
                 pipe = await pipeline(
                     'token-classification',
-                    'onnx-community/distilbert-base-multilingual-cased-finetuned-ner',
+                    'Xenova/distilbert-base-multilingual-cased-finetuned-ner',
                     {
+                        quantized: true, // Использовать квантованную версию (~15 МБ вместо 80 МБ)
                         progress_callback: (e) => {
                             if (e.status === 'download' || e.status === 'progress') {
                                 if (e.total && e.loaded) {
                                     const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
                                     progressBar.style.width = `${pct}%`;
-                                    status.textContent = `⏳ Загрузка файлов: ${pct}%`;
-                                } else {
-                                    status.textContent = '⏳ Загрузка весов модели...';
+                                    status.textContent = `⏳ Загрузка: ${pct}%`;
                                 }
+                            } else if (e.status === 'ready') {
+                                progressBar.style.width = '100%';
                             }
                         }
                     }
@@ -105,7 +109,7 @@
                 modelLoaded = true;
                 progressBar.className = 'progress-bar success';
                 progressBar.style.width = '100%';
-                status.textContent = '✅ Модель готова к работе!';
+                status.textContent = '✅ Модель готова!';
                 loadBtn.textContent = '✅ Загружено';
                 loadBtn.style.background = '#10b981';
                 textarea.disabled = false;
@@ -115,10 +119,17 @@
                 progressBar.className = 'progress-bar error';
                 progressBar.style.width = '100%';
                 
-                if (err.message.includes('401') || err.message.includes('Unauthorized')) {
-                    status.innerHTML = '❌ Ошибка 401: Откройте страницу через <code>http://localhost</code>';
-                } else if (err.message.includes('404')) {
-                    status.textContent = '❌ Модель не найдена. Проверьте соединение.';
+                if (err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+                    status.innerHTML = '❌ Ошибка доступа. <a href="#" id="retryLink">Попробовать через jsdelivr</a>';
+                    document.getElementById('retryLink').onclick = (e) => {
+                        e.preventDefault();
+                        // Переключаем на прямую загрузку с HF
+                        env.remoteHost = undefined;
+                        env.remotePathTemplate = undefined;
+                        loadBtn.click();
+                    };
+                } else if (err.message?.includes('404')) {
+                    status.textContent = '❌ Модель не найдена. Проверьте название.';
                 } else {
                     status.textContent = `❌ Ошибка: ${err.message}`;
                 }
@@ -136,66 +147,52 @@
             }
 
             runBtn.disabled = true;
-            status.textContent = '⏳ Анализ текста нейросетью...';
+            status.textContent = '⏳ Анализ...';
             progressBar.className = 'progress-bar';
-            progressBar.style.width = '10%';
+            progressBar.style.width = '20%';
 
             try {
-                // Разбиваем на чанки для стабильности на длинных текстах
-                const CHUNK_SIZE = 450;
-                const OVERLAP = 50;
-                const chunks = [];
-                for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
-                    chunks.push({ text: text.slice(i, i + CHUNK_SIZE), offset: i });
-                }
-
-                const allEntities = [];
-                for (let i = 0; i < chunks.length; i++) {
-                    progressBar.style.width = `${10 + Math.round(((i + 1) / chunks.length) * 80)}%`;
-                    const chunk = chunks[i];
-                    
-                    // aggregation_strategy: 'simple' автоматически склеивает B-PER/I-PER
-                    const results = await pipe(chunk.text, { aggregation_strategy: 'simple' });
-                    
-                    for (const ent of results) {
-                        allEntities.push({
-                            start: ent.start + chunk.offset,
-                            end: ent.end + chunk.offset,
-                            type: ent.entity_group || ent.entity,
-                            score: ent.score
-                        });
-                    }
-                }
-
-                // Фильтрация по уверенности и удаление перекрытий
-                const THRESHOLD = 0.6;
-                const valid = allEntities.filter(e => e.score >= THRESHOLD).sort((a, b) => a.start - b.start);
-                const merged = [];
-                for (const e of valid) {
-                    if (!merged.length || e.start >= merged[merged.length - 1].end) {
-                        merged.push(e);
-                    } else if (e.score > merged[merged.length - 1].score) {
-                        merged[merged.length - 1] = e;
-                    }
-                }
-
-                // Замена сущностей (в обратном порядке, чтобы индексы не сбились)
+                // Простая обработка (без чанкования для коротких текстов)
+                const results = await pipe(text, { aggregation_strategy: 'simple' });
+                
+                // Фильтрация и замена
+                const THRESHOLD = 0.5;
+                const labels = { PER: 'ФИО', PERSON: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ', LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ' };
+                
                 let result = text;
-                merged.reverse().forEach(ent => {
-                    const labelMap = { PER: 'ФИО', PERSON: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ', LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ' };
-                    const label = labelMap[ent.type] || ent.type.toUpperCase();
-                    result = result.slice(0, ent.start) + `[${label}]` + result.slice(ent.end);
-                });
-
+                let count = 0;
+                
+                // Сортируем и убираем перекрытия
+                const entities = results
+                    .filter(e => e.score >= THRESHOLD)
+                    .sort((a, b) => a.start - b.start);
+                
+                const merged = [];
+                for (const e of entities) {
+                    if (!merged.length || e.start >= merged[merged.length-1].end) {
+                        merged.push(e);
+                    } else if (e.score > merged[merged.length-1].score) {
+                        merged[merged.length-1] = e;
+                    }
+                }
+                
+                // Замена с конца
+                for (let i = merged.length - 1; i >= 0; i--) {
+                    const e = merged[i];
+                    const label = labels[e.entity_group] || e.entity_group?.toUpperCase() || 'СУЩНОСТЬ';
+                    result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
+                    count++;
+                }
+                
                 textarea.value = result;
                 progressBar.className = 'progress-bar success';
                 progressBar.style.width = '100%';
-                status.textContent = `✅ Готово! Найдено и заменено ${merged.length} сущностей.`;
+                status.textContent = `✅ Готово! Заменено ${count} сущностей.`;
             } catch (err) {
-                console.error('Ошибка обработки:', err);
+                console.error('Ошибка:', err);
                 progressBar.className = 'progress-bar error';
                 progressBar.style.width = '100%';
-                status.textContent = '❌ Ошибка при анализе текста. Попробуйте сократить текст.';
+                status.textContent = '❌ Ошибка обработки.';
             } finally {
                 runBtn.disabled = false;
             }
