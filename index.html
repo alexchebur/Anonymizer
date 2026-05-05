@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (с организациями и email)</title>
+    <title>Анонимизатор (финальная версия)</title>
     <style>
         :root {
             --primary: #2563eb;
@@ -129,7 +129,7 @@
 </head>
 <body>
 <div class="card">
-    <h1>🔒 Анонимизация текстов (улучшенная)</h1>
+    <h1>🔒 Анонимизация текстов (финальная)</h1>
 
     <div id="fileWarning" class="warning">
         ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
@@ -152,13 +152,13 @@
         <span id="thresholdValue">0.70</span>
     </div>
 
-    <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО «Яндекс», тел. +73433591885, email: ivanoff@yandex.ru. Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195.</textarea>
+    <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО «Яндекс», тел. +79122266330, email: ivanoff@yandex.ru. Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195.</textarea>
 
     <div class="debug" id="debugPanel"></div>
 
     <div class="hint">
-        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER + regex)<br>
-        <strong>Regex‑типы:</strong> организации, email, телефон, паспорт, СНИЛС, ИНН, ОГРН<br>
+        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER + продвинутые regex)<br>
+        <strong>Regex‑типы:</strong> организации, названия в кавычках, email, телефон, паспорт, СНИЛС, ИНН, ОГРН<br>
         <strong>Приватность:</strong> всё локально
     </div>
 </div>
@@ -191,6 +191,7 @@
     const entityConfig = {
         PER:        { label: 'ФИО',             enabled: true },
         ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
+        TITLE:      { label: 'НАЗВАНИЕ',        enabled: false },  // можно включить для всех названий в кавычках
         LOC:        { label: 'МЕСТО',           enabled: false },
         GPE:        { label: 'ЛОКАЦИЯ',         enabled: false },
         MISC:       { label: 'ДРУГОЕ',          enabled: false },
@@ -202,6 +203,7 @@
         EMAIL:      { label: 'EMAIL',          enabled: true }
     };
 
+    // --- Валидация контрольных сумм ---
     function isValidINN(inn) {
         if (!/^\d{12}$/.test(inn)) return false;
         const d = inn.split('').map(Number);
@@ -234,6 +236,7 @@
         return check === (remainder === 10 ? 0 : remainder);
     }
 
+    // --- Regex‑сущности ---
     function findRegexEntities(text) {
         const results = [];
         const patterns = [
@@ -245,12 +248,14 @@
             // Телефоны
             { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE' },
             { regex: /\b[87]\d{10}\b/g,                                  type: 'PHONE' },
-            // Email (стандартный с @)
+            // Email (стандартный)
             { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL' },
-            // Организации (ООО, ЗАО, АО, ОАО, ПАО, ИП) с названием в кавычках или без
+            // Email без @ для популярных доменов (если встречается)
+            { regex: /\b[A-Za-z0-9._%+-]+\.(?:yandex|mail|gmail|list|bk|inbox|rambler)\.ru\b/g, type: 'EMAIL' },
+            // Организации: ООО, ЗАО, АО и т.п. с названием
             { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/g, type: 'ORG', score: 1.0 },
-            // Адреса без @, похожие на email (ivanoff.yandex.ru и т.п.)
-            { regex: /\b[A-Za-z0-9._%+-]+\.(?:yandex|mail|gmail|list|bk|inbox|rambler)\.ru\b/g, type: 'EMAIL' }
+            // Названия в кавычках, начинающиеся с заглавной буквы (возможные организации/проекты)
+            { regex: /«[А-ЯЁA-Z][^»]{0,50}»/g, type: 'TITLE', score: 1.0 }
         ];
 
         for (const { regex, type, score = 1.0 } of patterns) {
@@ -260,7 +265,6 @@
                 if (type === 'INN'   && !isValidINN(word))   continue;
                 if (type === 'SNILS' && !isValidSNILS(word)) continue;
                 if (type === 'OGRN'  && !isValidOGRN(word))  continue;
-                // Если телефон слитный (11 цифр) и уже захвачен более общим шаблоном, избегаем дублей
                 results.push({
                     start: match.index,
                     end: match.index + word.length,
@@ -273,7 +277,7 @@
         return results;
     }
 
-    // Прямое определение позиций токенов
+    // --- Поиск позиций токенов (улучшенный) ---
     function locateTokens(tokens, text) {
         const located = [];
         let currentPos = 0;
@@ -281,29 +285,44 @@
             let word = t.word;
             const isSubword = word.startsWith('##');
             if (isSubword) word = word.slice(2);
+            let idx;
             if (isSubword) {
-                const idx = text.indexOf(word, currentPos);
-                if (idx !== currentPos) continue;
-                located.push({ ...t, start: idx, end: idx + word.length, word: text.slice(idx, idx + word.length) });
-                currentPos = idx + word.length;
+                // Сначала пытаемся найти встык
+                idx = text.indexOf(word, currentPos);
+                if (idx !== currentPos) {
+                    // Если не встык, пробуем искать с учётом возможного пробела/знака
+                    idx = text.indexOf(word, currentPos);
+                    if (idx === -1) continue;
+                }
             } else {
-                const idx = text.indexOf(word, currentPos);
+                idx = text.indexOf(word, currentPos);
                 if (idx === -1) continue;
-                located.push({ ...t, start: idx, end: idx + word.length, word: text.slice(idx, idx + word.length) });
-                currentPos = idx + word.length;
             }
+            located.push({
+                ...t,
+                start: idx,
+                end: idx + word.length,
+                word: text.slice(idx, idx + word.length)
+            });
+            currentPos = idx + word.length;
         }
         return located;
     }
 
+    // BIO-метки → группа
     const bioToGroup = {
         LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
         ORG: 'ORG', ORGANIZATION: 'ORG',
-        LOC: 'LOC', GPE: 'GPE',
-        CITY: 'LOC', STREET: 'LOC',   // добавлено
+        LOC: 'LOC', GPE: 'GPE', CITY: 'LOC', STREET: 'LOC',
         MISC: 'MISC'
     };
 
+    // Фильтр однобуквенных PER
+    function isSingleCharJunk(entity) {
+        return entity.entity_group === 'PER' && entity.word.length === 1 && !entity.word.match(/[А-ЯЁA-Z]\.?/);
+    }
+
+    // Склеивание соседних PER
     function mergePersonTokens(entities, text) {
         const merged = [];
         for (const e of entities) {
@@ -312,8 +331,7 @@
                 continue;
             }
             const prev = merged[merged.length-1];
-            const bothPerson = (prev.entity_group === 'PER' && e.entity_group === 'PER');
-            if (bothPerson && e.start <= prev.end + 2) {
+            if (prev.entity_group === 'PER' && e.entity_group === 'PER' && e.start <= prev.end + 2) {
                 prev.end = e.end;
                 prev.word = text.slice(prev.start, e.end);
                 prev.score = Math.min(prev.score, e.score);
@@ -324,6 +342,7 @@
         return merged;
     }
 
+    // Построение чекбоксов
     function renderTypeSettings() {
         let html = '';
         for (const [type, cfg] of Object.entries(entityConfig)) {
@@ -343,6 +362,7 @@
         });
     }
 
+    // --- Загрузка модели ---
     loadBtn.addEventListener('click', async () => {
         loadBtn.disabled = true;
         loadBtn.textContent = '⏳ Загрузка...';
@@ -369,7 +389,7 @@
             modelLoaded = true;
             progressBar.className = 'progress-bar success';
             progressBar.style.width = '100%';
-            status.textContent = '✅ Модель готова!';
+            status.textContent = '✅ Модель готова! Выберите типы и нажмите «Анонимизировать»';
             loadBtn.textContent = '✅ Загружено';
             loadBtn.style.background = '#10b981';
             textarea.disabled = false;
@@ -385,6 +405,7 @@
         }
     });
 
+    // --- Анонимизация ---
     runBtn.addEventListener('click', async () => {
         const text = textarea.value.trim();
         if (!text) { status.textContent = '⚠️ Введите текст'; return; }
@@ -419,7 +440,8 @@
                         entity_group: group,
                         score: t.score
                     };
-                });
+                })
+                .filter(e => !isSingleCharJunk(e));  // удаляем одиночные буквы
 
             const nerMerged = mergePersonTokens(nerEntities, text);
             lastDebug += `🧩 NER‑сущности после объединения PER: ${nerMerged.length}\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
