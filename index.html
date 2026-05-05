@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (полная версия)</title>
+    <title>Анонимизатор (точные границы)</title>
     <style>
         :root {
             --primary: #2563eb;
@@ -34,7 +34,7 @@
         h1 { font-size: 1.5rem; margin-bottom: 1rem; }
         textarea {
             width: 100%;
-            height: 200px;
+            height: 220px;
             margin: 1rem 0;
             padding: 0.8rem;
             border: 1px solid var(--border);
@@ -129,7 +129,7 @@
 </head>
 <body>
 <div class="card">
-    <h1>🔒 Анонимизация текстов (полная версия)</h1>
+    <h1>🔒 Анонимизация текстов (точные границы)</h1>
 
     <div id="fileWarning" class="warning">
         ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
@@ -152,17 +152,14 @@
         <span id="thresholdValue">0.70</span>
     </div>
 
-    <textarea id="inputText" disabled placeholder="Введите текст для анонимизации...
-Пример: Иванов Иван Петрович работает в ООО Яндекс.
-Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195.
-Телефон: +7 (999) 123-45-67"></textarea>
+    <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО «Яндекс», тел. +73433591885, email: ivanoff@yandex.ru. Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195.</textarea>
 
     <div class="debug" id="debugPanel"></div>
 
     <div class="hint">
-        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER‑токены агрегируются вручную)<br>
-        <strong>Регулярные выражения:</strong> паспорт, СНИЛС, ИНН, ОГРН, телефон, email (с контрольными суммами)<br>
-        <strong>Приватность:</strong> всё обрабатывается локально
+        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (границы из токенизатора)<br>
+        <strong>Regex‑типы:</strong> паспорт, СНИЛС, ИНН, ОГРН, телефон, email (контрольные суммы)<br>
+        <strong>Приватность:</strong> всё локально
     </div>
 </div>
 
@@ -189,10 +186,11 @@
     const typeSettings = document.getElementById('typeSettings');
 
     let nerPipeline;
+    let tokenizer;
     let modelLoaded = false;
     let lastDebug = '';
 
-    // Конфигурация типов и их отображение по умолчанию
+    // Конфигурация типов
     const entityConfig = {
         PER:        { label: 'ФИО',             enabled: true },
         ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
@@ -207,7 +205,7 @@
         EMAIL:      { label: 'EMAIL',          enabled: true }
     };
 
-    // --- Валидация контрольных сумм ---
+    // Валидация контрольных сумм
     function isValidINN(inn) {
         if (!/^\d{12}$/.test(inn)) return false;
         const d = inn.split('').map(Number);
@@ -243,16 +241,19 @@
         return check === expected;
     }
 
-    // --- Поиск по регулярным выражениям ---
+    // Regex‑поиск
     function findRegexEntities(text) {
         const results = [];
         const patterns = [
-            { regex: /\b\d{4}[\s-]?\d{6}\b/g,                       type: 'PASSPORT', score: 1.0 },
-            { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS',    score: 1.0 },
-            { regex: /\b\d{12}\b/g,                                   type: 'INN',      score: 1.0 },
-            { regex: /\b\d{13}(?:\d{2})?\b/g,                         type: 'OGRN',     score: 1.0 },
-            { regex: /\b(?:\+7|8)[\s-]?(?:\(\d{3}\)|\d{3})[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', score: 1.0 },
-            { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,            type: 'EMAIL',    score: 1.0 }
+            { regex: /\b\d{4}[\s-]?\d{6}\b/g,                         type: 'PASSPORT', score: 1.0 },
+            { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g,   type: 'SNILS',    score: 1.0 },
+            { regex: /\b\d{12}\b/g,                                     type: 'INN',      score: 1.0 },
+            { regex: /\b\d{13}(?:\d{2})?\b/g,                           type: 'OGRN',     score: 1.0 },
+            // Телефон: гибкий шаблон (с кодом страны или без, разделители или слитно)
+            { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', score: 1.0 },
+            // Дополнительный слитный российский номер (11 цифр, первая 8 или 7)
+            { regex: /\b[87]\d{10}\b/g,                                  type: 'PHONE', score: 1.0 },
+            { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', score: 1.0 }
         ];
 
         for (const { regex, type, score } of patterns) {
@@ -262,7 +263,6 @@
                 if (type === 'INN'   && !isValidINN(word))   continue;
                 if (type === 'SNILS' && !isValidSNILS(word)) continue;
                 if (type === 'OGRN'  && !isValidOGRN(word))  continue;
-                // Паспорт, телефон, email без дополнительной валидации
                 results.push({
                     start: match.index,
                     end: match.index + word.length,
@@ -275,69 +275,95 @@
         return results;
     }
 
-    // --- Агрегация BIO-токенов в сущности ---
-    function aggregateBIO(tokens, text) {
+    // Типы, которые считаются частью персоны
+    const personLabels = new Set(['LAST_NAME', 'FIRST_NAME', 'MIDDLE_NAME', 'PERSON', 'PER']);
+
+    // Агрегация токенов с использованием offsets из токенизатора
+    function aggregateTokensWithOffsets(rawTokens, offsets, text) {
         const entities = [];
         let current = null;
 
-        for (const t of tokens) {
-            const tag = t.entity;              // например "U-LAST_NAME"
+        rawTokens.sort((a, b) => a.index - b.index); // на всякий случай
+
+        for (const t of rawTokens) {
+            const idx = t.index;   // позиция в последовательности токенов (начиная с 1? после CLS)
+            // offsets[idx] может не существовать, если токен специальный; проверяем
+            if (!offsets || idx >= offsets.length) continue;
+            const [start, end] = offsets[idx];  // character offsets
+
+            const tag = t.entity;
             if (!tag || tag === 'O') {
                 if (current) { entities.push(current); current = null; }
                 continue;
             }
+
             const parts = tag.split('-');
-            const prefix = parts[0];           // B, I, U, L
-            const label = parts.slice(1).join('-'); // LAST_NAME, ORG и т.д.
-
-            // Найти позицию токена в тексте
-            const searchStart = current ? current.end : 0;
-            const idx = text.indexOf(t.word, searchStart);
-            if (idx === -1) {
-                if (current) { entities.push(current); current = null; }
-                continue;
-            }
-
-            const tokenInfo = {
-                word: t.word,
-                start: idx,
-                end: idx + t.word.length,
-                score: t.score,
-                label
-            };
+            const prefix = parts[0];
+            const label = parts.slice(1).join('-');
 
             if (prefix === 'B' || prefix === 'U') {
                 if (current) entities.push(current);
-                current = { ...tokenInfo, type: label };
+                // Начало новой сущности
+                current = {
+                    start,
+                    end,
+                    word: text.slice(start, end),
+                    score: t.score,
+                    type: label,   // например LAST_NAME
+                };
                 if (prefix === 'U') {
-                    entities.push(current);
-                    current = null;
+                    // U‑токен может быть частью составного имени, если за ним идёт другой U‑токен персоны
+                    // Не закрываем сразу, а ждём следующего токена
+                    // Но если след. токен не персональный или конец, то закроем
                 }
             } else if (current && (prefix === 'I' || prefix === 'L')) {
-                // Расширяем текущую сущность
-                current.end = tokenInfo.end;
-                current.word = text.slice(current.start, tokenInfo.end);
-                current.score = Math.min(current.score, tokenInfo.score);
-                // label не меняется, т.к. I-токены того же типа
+                // Продолжение сущности – расширяем границы
+                current.end = end;
+                current.word = text.slice(current.start, end);
+                current.score = Math.min(current.score, t.score);
             } else {
-                // Неожиданный префикс — закрываем предыдущую
+                // Неожиданный префикс – закрываем предыдущую
                 if (current) { entities.push(current); current = null; }
             }
         }
         if (current) entities.push(current);
-        return entities;
+
+        // Пост‑обработка: объединение соседних U‑токенов, относящихся к персоне (LAST_NAME, FIRST_NAME, MIDDLE_NAME)
+        const merged = [];
+        for (const ent of entities) {
+            if (merged.length === 0) {
+                merged.push(ent);
+                continue;
+            }
+            const prev = merged[merged.length - 1];
+            const prevIsPerson = personLabels.has(prev.type);
+            const currIsPerson = personLabels.has(ent.type);
+            // Если оба персоны и ent.start == prev.end (или перекрытие небольшое), объединяем
+            if (prevIsPerson && currIsPerson && ent.start <= prev.end + 2) {
+                // объединяем
+                prev.end = ent.end;
+                prev.word = text.slice(prev.start, ent.end);
+                prev.score = Math.min(prev.score, ent.score);
+                prev.type = 'PER';   // превращаем в PER
+            } else {
+                merged.push(ent);
+            }
+        }
+
+        return merged.map(ent => ({
+            ...ent,
+            entity_group: ent.type === 'PER' ? 'PER' : (bioToGroup[ent.type] || ent.type || 'MISC')
+        }));
     }
 
-    // Преобразование BIO-меток в типы для entityConfig
     const bioToGroup = {
         LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
-        PERSON: 'PER',
         ORG: 'ORG', ORGANIZATION: 'ORG',
-        LOC: 'LOC', GPE: 'GPE',   // GPE оставляем как GPE, можно будет отключить отдельно
+        LOC: 'LOC', GPE: 'GPE',
         MISC: 'MISC'
     };
 
-    // --- Построение чекбоксов ---
+    // Построение чекбоксов
     function renderTypeSettings() {
         let html = '';
         for (const [type, cfg] of Object.entries(entityConfig)) {
@@ -358,7 +384,7 @@
         });
     }
 
-    // --- Загрузка модели ---
+    // Загрузка модели
     loadBtn.addEventListener('click', async () => {
         loadBtn.disabled = true;
         loadBtn.textContent = '⏳ Загрузка...';
@@ -368,24 +394,22 @@
 
         try {
             const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
-            nerPipeline = await pipeline(
-                'ner',                // Оставляем 'ner', но агрегируем вручную
-                MODEL_ID,
-                {
-                    progress_callback: (e) => {
-                        if (e.status === 'download' || e.status === 'progress') {
-                            if (e.total && e.loaded) {
-                                const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
-                                progressBar.style.width = `${pct}%`;
-                                status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
-                            }
-                        } else if (e.status === 'ready') {
-                            progressBar.style.width = '100%';
-                            status.textContent = '✅ Модель загружена!';
+            nerPipeline = await pipeline('ner', MODEL_ID, {
+                progress_callback: (e) => {
+                    if (e.status === 'download' || e.status === 'progress') {
+                        if (e.total && e.loaded) {
+                            const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
+                            progressBar.style.width = `${pct}%`;
+                            status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
                         }
+                    } else if (e.status === 'ready') {
+                        progressBar.style.width = '100%';
+                        status.textContent = '✅ Модель загружена!';
                     }
                 }
-            );
+            });
+            // Сохраняем токенизатор
+            tokenizer = nerPipeline.tokenizer;
 
             modelLoaded = true;
             progressBar.className = 'progress-bar success';
@@ -406,7 +430,7 @@
         }
     });
 
-    // --- Анонимизация ---
+    // Анонимизация
     runBtn.addEventListener('click', async () => {
         const text = textarea.value.trim();
         if (!text) { status.textContent = '⚠️ Введите текст'; return; }
@@ -422,36 +446,39 @@
         try {
             const threshold = parseFloat(nerThreshold.value);
 
-            // 1. Сырые токены NER
-            const rawTokens = await nerPipeline(text, { group_entities: true }); // group_entities всё равно не сработает, но получим токены
+            // 1. Токенизация с offsets
+            const encoding = await tokenizer(text, { return_offsets: true });
+            const offsets = encoding.offsets;  // массив [start, end] для каждого токена (включая CLS/SEP)
+
+            // 2. Сырые токены NER
+            const rawTokens = await nerPipeline(text, { group_entities: true });
             lastDebug += `🔍 Сырые NER‑токены (${rawTokens.length}):\n${JSON.stringify(rawTokens, null, 2)}\n\n`;
 
-            // 2. Ручная агрегация
-            const nerAggregated = aggregateBIO(rawTokens, text);
-            lastDebug += `🧩 Агрегированные NER‑сущности (${nerAggregated.length}):\n${JSON.stringify(nerAggregated, null, 2)}\n\n`;
+            // 3. Агрегация с точными offsets
+            const nerEntities = aggregateTokensWithOffsets(rawTokens, offsets, text);
+            lastDebug += `🧩 Агрегированные NER‑сущности (${nerEntities.length}):\n${JSON.stringify(nerEntities, null, 2)}\n\n`;
 
-            // 3. Regex‑сущности
+            // 4. Regex‑сущности
             const regexEntities = findRegexEntities(text);
             lastDebug += `🔎 Regex‑сущности (${regexEntities.length}):\n${JSON.stringify(regexEntities.map(e => ({word:e.word, type:e.entity_group})), null, 2)}\n\n`;
 
-            // 4. Преобразуем NER в единый формат
-            const nerMapped = nerAggregated
+            // 5. Фильтр NER по порогу и маппинг типов (уже entity_group)
+            const nerFiltered = nerEntities
                 .filter(e => e.score >= threshold)
                 .map(e => ({
                     start: e.start,
                     end: e.end,
                     word: e.word,
-                    entity_group: bioToGroup[e.type] || e.type || 'MISC',
+                    entity_group: e.entity_group,
                     score: e.score
                 }));
 
-            // 5. Объединяем с regex
-            let allEntities = [...nerMapped, ...regexEntities];
+            let allEntities = [...nerFiltered, ...regexEntities];
 
             // 6. Фильтр по включённым типам
             allEntities = allEntities.filter(e => entityConfig[e.entity_group]?.enabled);
 
-            // 7. Сортировка и разрешение перекрытий (приоритет: выше score, при равном – более длинная)
+            // 7. Сортировка и разрешение перекрытий
             allEntities.sort((a, b) => a.start - b.start);
             const merged = [];
             for (const ent of allEntities) {
@@ -522,7 +549,7 @@
         }
     });
 
-    // Инициализация интерфейса
+    // Инициализация
     renderTypeSettings();
     thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
 </script>
