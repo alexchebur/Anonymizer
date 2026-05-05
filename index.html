@@ -1,517 +1,590 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (финальная версия)</title>
-    <style>
-        :root {
-            --primary: #2563eb;
-            --success: #10b981;
-            --error: #ef4444;
-            --bg: #f8fafc;
-            --card: #ffffff;
-            --border: #e2e8f0;
-            --text: #0f172a;
-            --muted: #64748b;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 960px;
-            margin: 2rem auto;
-            padding: 0 1rem;
-            background: var(--bg);
-            color: var(--text);
-        }
-        .card {
-            background: var(--card);
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            margin-bottom: 1.5rem;
-        }
-        h1 { font-size: 1.5rem; margin-bottom: 1rem; }
-        textarea {
-            width: 100%;
-            height: 220px;
-            margin: 1rem 0;
-            padding: 0.8rem;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 15px;
-            resize: vertical;
-            background: #f8fafc;
-            font-family: monospace;
-        }
-        textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
-        .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; margin: 0.5rem 0; }
-        button {
-            padding: 0.6rem 1.2rem;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            border: none;
-            border-radius: 6px;
-            transition: opacity 0.2s;
-        }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        #loadBtn { background: var(--primary); color: white; }
-        #runBtn { background: var(--success); color: white; }
-        #debugToggle { background: #64748b; color: white; }
-        .progress {
-            width: 100%;
-            height: 4px;
-            background: var(--border);
-            border-radius: 2px;
-            overflow: hidden;
-            margin: 0.5rem 0;
-        }
-        .progress-bar {
-            height: 100%;
-            width: 0%;
-            background: var(--primary);
-            transition: width 0.3s;
-        }
-        .progress-bar.success { background: var(--success); }
-        .progress-bar.error { background: var(--error); }
-        .status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
-        .hint {
-            font-size: 0.85rem;
-            color: var(--muted);
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border);
-        }
-        .warning {
-            background: #fef3c7;
-            border-left: 4px solid #f59e0b;
-            padding: 0.8rem;
-            border-radius: 0 6px 6px 0;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-            display: none;
-        }
-        .debug {
-            font-size: 0.8rem;
-            color: #334155;
-            margin-top: 0.5rem;
-            font-family: monospace;
-            white-space: pre-wrap;
-            max-height: 250px;
-            overflow-y: auto;
-            background: #f1f5f9;
-            padding: 0.8rem;
-            border-radius: 6px;
-            display: none;
-        }
-        .debug.show { display: block; }
-        .settings {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 0.5rem 1rem;
-            margin: 1rem 0;
-        }
-        .setting label {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.9rem;
-        }
-        .slider-container {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin: 0.5rem 0;
-        }
-        input[type="range"] { width: 150px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Анонимизатор (чанкинг + нумерация)</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --success: #10b981;
+      --error: #ef4444;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 960px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .card {
+      background: var(--card);
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 1.5rem;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+    textarea {
+      width: 100%;
+      height: 220px;
+      margin: 1rem 0;
+      padding: 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 15px;
+      resize: vertical;
+      background: #f8fafc;
+      font-family: monospace;
+    }
+    textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
+    .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; margin: 0.5rem 0; }
+    button {
+      padding: 0.6rem 1.2rem;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      transition: opacity 0.2s;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #loadBtn { background: var(--primary); color: white; }
+    #runBtn { background: var(--success); color: white; }
+    #debugToggle { background: #64748b; color: white; }
+    .progress {
+      width: 100%;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin: 0.5rem 0;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--primary);
+      transition: width 0.3s;
+    }
+    .progress-bar.success { background: var(--success); }
+    .progress-bar.error { background: var(--error); }
+    .status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
+    .hint {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .warning {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 0.8rem;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .debug {
+      font-size: 0.8rem;
+      color: #334155;
+      margin-top: 0.5rem;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 250px;
+      overflow-y: auto;
+      background: #f1f5f9;
+      padding: 0.8rem;
+      border-radius: 6px;
+      display: none;
+    }
+    .debug.show { display: block; }
+    .settings {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.5rem 1rem;
+      margin: 1rem 0;
+    }
+    .setting label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0.5rem 0;
+    }
+    input[type="range"] { width: 150px; }
+  </style>
 </head>
 <body>
 <div class="card">
-    <h1>🔒 Анонимизация текстов (финальная)</h1>
+  <h1>🔒 Анонимизатор (чанкинг + нумерация)</h1>
 
-    <div id="fileWarning" class="warning">
-        ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
-    </div>
+  <div id="fileWarning" class="warning">
+    ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
+  </div>
 
-    <div class="btn-group">
-        <button id="loadBtn">🔄 Загрузить модель</button>
-        <button id="runBtn" disabled>🔒 Анонимизировать</button>
-        <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
-    </div>
+  <div class="btn-group">
+    <button id="loadBtn">🔄 Загрузить модель</button>
+    <button id="runBtn" disabled>🔒 Анонимизировать</button>
+    <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
+  </div>
 
-    <div id="status" class="status">Нажмите «Загрузить модель»</div>
-    <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+  <div id="status" class="status">Нажмите «Загрузить модель»</div>
+  <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
 
-    <div class="settings" id="typeSettings"></div>
+  <div class="settings" id="typeSettings"></div>
 
-    <div class="slider-container">
-        <label for="nerThreshold">Порог уверенности NER:</label>
-        <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
-        <span id="thresholdValue">0.70</span>
-    </div>
+  <div class="slider-container">
+    <label for="nerThreshold">Порог уверенности NER:</label>
+    <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
+    <span id="thresholdValue">0.70</span>
+  </div>
 
-    <textarea id="inputText" disabled placeholder="Введите текст...">Иванов Иван Петрович работает в ООО «Яндекс», тел. +79122266330, email: ivanoff@yandex.ru. Паспорт 4501 123456, СНИЛС 123-456-789 01, ИНН 123456789012, ОГРН 1027700132195.</textarea>
+  <textarea id="inputText" disabled placeholder="Введите текст...">Сергеева Клавдия Аркадьевна работает в Свердловском филиале ПАО «Т Плюс», г. Екатеринбург, пр. Ленина, 38. Тел. +7(343)359-18-85, эл.почта: klava@tplusgroup.ru</textarea>
 
-    <div class="debug" id="debugPanel"></div>
+  <div class="debug" id="debugPanel"></div>
 
-    <div class="hint">
-        <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (NER + продвинутые regex)<br>
-        <strong>Regex‑типы:</strong> организации, названия в кавычках, email, телефон, паспорт, СНИЛС, ИНН, ОГРН<br>
-        <strong>Приватность:</strong> всё локально
-    </div>
+  <div class="hint">
+    <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code> (чанкинг для длинных текстов)<br>
+    <strong>Regex‑типы:</strong> организации, названия в кавычках, email, телефон, паспорт, СНИЛС, ИНН, ОГРН<br>
+    <strong>Особенность:</strong> повторяющиеся одинаковые строки маскируются одним номером (например, [ФИО-1])<br>
+    <strong>Приватность:</strong> всё локально
+  </div>
 </div>
 
 <script type="module">
-    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
+  import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 
-    if (window.location.protocol === 'file:') {
-        document.getElementById('fileWarning').style.display = 'block';
-    }
+  if (window.location.protocol === 'file:') {
+    document.getElementById('fileWarning').style.display = 'block';
+  }
 
-    env.allowLocalModels = false;
-    env.useBrowserCache = true;
+  env.allowLocalModels = false;
+  env.useBrowserCache = true;
 
-    const loadBtn = document.getElementById('loadBtn');
-    const runBtn = document.getElementById('runBtn');
-    const debugToggle = document.getElementById('debugToggle');
-    const textarea = document.getElementById('inputText');
-    const status = document.getElementById('status');
-    const progressBar = document.getElementById('progressBar');
-    const debugPanel = document.getElementById('debugPanel');
-    const nerThreshold = document.getElementById('nerThreshold');
-    const thresholdValue = document.getElementById('thresholdValue');
-    const typeSettings = document.getElementById('typeSettings');
+  const loadBtn = document.getElementById('loadBtn');
+  const runBtn = document.getElementById('runBtn');
+  const debugToggle = document.getElementById('debugToggle');
+  const textarea = document.getElementById('inputText');
+  const status = document.getElementById('status');
+  const progressBar = document.getElementById('progressBar');
+  const debugPanel = document.getElementById('debugPanel');
+  const nerThreshold = document.getElementById('nerThreshold');
+  const thresholdValue = document.getElementById('thresholdValue');
+  const typeSettings = document.getElementById('typeSettings');
 
-    let nerPipeline;
-    let modelLoaded = false;
-    let lastDebug = '';
+  let nerPipeline;
+  let tokenizer;
+  let modelLoaded = false;
+  let lastDebug = '';
 
-    const entityConfig = {
-        PER:        { label: 'ФИО',             enabled: true },
-        ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
-        TITLE:      { label: 'НАЗВАНИЕ',        enabled: false },  // можно включить для всех названий в кавычках
-        LOC:        { label: 'МЕСТО',           enabled: false },
-        GPE:        { label: 'ЛОКАЦИЯ',         enabled: false },
-        MISC:       { label: 'ДРУГОЕ',          enabled: false },
-        PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
-        SNILS:      { label: 'СНИЛС',          enabled: true },
-        INN:        { label: 'ИНН',            enabled: true },
-        OGRN:       { label: 'ОГРН',           enabled: true },
-        PHONE:      { label: 'ТЕЛЕФОН',        enabled: true },
-        EMAIL:      { label: 'EMAIL',          enabled: true }
-    };
+  const entityConfig = {
+    PER:        { label: 'ФИО',             enabled: true },
+    ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
+    TITLE:      { label: 'НАЗВАНИЕ',        enabled: false },
+    LOC:        { label: 'МЕСТО',           enabled: false },
+    GPE:        { label: 'ЛОКАЦИЯ',         enabled: false },
+    MISC:       { label: 'ДРУГОЕ',          enabled: false },
+    PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
+    SNILS:      { label: 'СНИЛС',           enabled: true },
+    INN:        { label: 'ИНН',             enabled: true },
+    OGRN:       { label: 'ОГРН',            enabled: true },
+    PHONE:      { label: 'ТЕЛЕФОН',         enabled: true },
+    EMAIL:      { label: 'EMAIL',           enabled: true }
+  };
 
-    // --- Валидация контрольных сумм ---
-    function isValidINN(inn) {
-        if (!/^\d{12}$/.test(inn)) return false;
-        const d = inn.split('').map(Number);
-        const c1 = [7,2,4,10,3,5,9,4,6,8];
-        const c2 = [3,7,2,4,10,3,5,9,4,6,8];
-        let s1=0, s2=0;
-        for (let i=0; i<10; i++) s1 += c1[i]*d[i];
-        for (let i=0; i<11; i++) s2 += c2[i]*d[i];
-        return d[10]===(s1%11)%10 && d[11]===(s2%11)%10;
-    }
+  // Валидация
+  function isValidINN(inn) {
+    if (!/^\d{12}$/.test(inn)) return false;
+    const d = inn.split('').map(Number);
+    const c1 = [7,2,4,10,3,5,9,4,6,8];
+    const c2 = [3,7,2,4,10,3,5,9,4,6,8];
+    let s1=0, s2=0;
+    for (let i=0; i<10; i++) s1 += c1[i]*d[i];
+    for (let i=0; i<11; i++) s2 += c2[i]*d[i];
+    return d[10]===(s1%11)%10 && d[11]===(s2%11)%10;
+  }
+  function isValidSNILS(snils) {
+    const digits = snils.replace(/[\s-]/g, '');
+    if (!/^\d{11}$/.test(digits)) return false;
+    const nums = digits.split('').map(Number);
+    let sum = 0;
+    for (let i=0; i<9; i++) sum += nums[i]*(9-i);
+    let control = sum % 101;
+    if (control === 100 || control === 101) control = 0;
+    return control === parseInt(digits.slice(9,11), 10);
+  }
+  function isValidOGRN(ogrn) {
+    const clean = ogrn.replace(/\D/g, '');
+    if (clean.length !== 13 && clean.length !== 15) return false;
+    const num = BigInt(clean.slice(0, -1));
+    const check = Number(clean.slice(-1));
+    const mod = clean.length === 13 ? 11n : 13n;
+    const remainder = Number(num % mod);
+    return check === (remainder === 10 ? 0 : remainder);
+  }
 
-    function isValidSNILS(snils) {
-        const digits = snils.replace(/[\s-]/g, '');
-        if (!/^\d{11}$/.test(digits)) return false;
-        const nums = digits.split('').map(Number);
-        let sum = 0;
-        for (let i=0; i<9; i++) sum += nums[i]*(9-i);
-        let control = sum % 101;
-        if (control === 100 || control === 101) control = 0;
-        return control === parseInt(digits.slice(9,11), 10);
-    }
-
-    function isValidOGRN(ogrn) {
-        const clean = ogrn.replace(/\D/g, '');
-        if (clean.length !== 13 && clean.length !== 15) return false;
-        const num = BigInt(clean.slice(0, -1));
-        const check = Number(clean.slice(-1));
-        const mod = clean.length === 13 ? 11n : 13n;
-        const remainder = Number(num % mod);
-        return check === (remainder === 10 ? 0 : remainder);
-    }
-
-    // --- Regex‑сущности ---
-    function findRegexEntities(text) {
-        const results = [];
-        const patterns = [
-            // Паспорт, СНИЛС, ИНН, ОГРН
-            { regex: /\b\d{4}[\s-]?\d{6}\b/g,                         type: 'PASSPORT' },
-            { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g,   type: 'SNILS' },
-            { regex: /\b\d{12}\b/g,                                     type: 'INN' },
-            { regex: /\b\d{13}(?:\d{2})?\b/g,                           type: 'OGRN' },
-            // Телефоны
-            { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE' },
-            { regex: /\b[87]\d{10}\b/g,                                  type: 'PHONE' },
-            // Email (стандартный)
-            { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL' },
-            // Email без @ для популярных доменов (если встречается)
-            { regex: /\b[A-Za-z0-9._%+-]+\.(?:yandex|mail|gmail|list|bk|inbox|rambler)\.ru\b/g, type: 'EMAIL' },
-            // Организации: ООО, ЗАО, АО и т.п. с названием
-            { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/g, type: 'ORG', score: 1.0 },
-            // Названия в кавычках, начинающиеся с заглавной буквы (возможные организации/проекты)
-            { regex: /«[А-ЯЁA-Z][^»]{0,50}»/g, type: 'TITLE', score: 1.0 }
-        ];
-
-        for (const { regex, type, score = 1.0 } of patterns) {
-            let match;
-            while ((match = regex.exec(text)) !== null) {
-                const word = match[0];
-                if (type === 'INN'   && !isValidINN(word))   continue;
-                if (type === 'SNILS' && !isValidSNILS(word)) continue;
-                if (type === 'OGRN'  && !isValidOGRN(word))  continue;
-                results.push({
-                    start: match.index,
-                    end: match.index + word.length,
-                    word,
-                    entity_group: type,
-                    score
-                });
-            }
-        }
-        return results;
-    }
-
-    // --- Поиск позиций токенов (улучшенный) ---
-    function locateTokens(tokens, text) {
-        const located = [];
-        let currentPos = 0;
-        for (const t of tokens) {
-            let word = t.word;
-            const isSubword = word.startsWith('##');
-            if (isSubword) word = word.slice(2);
-            let idx;
-            if (isSubword) {
-                // Сначала пытаемся найти встык
-                idx = text.indexOf(word, currentPos);
-                if (idx !== currentPos) {
-                    // Если не встык, пробуем искать с учётом возможного пробела/знака
-                    idx = text.indexOf(word, currentPos);
-                    if (idx === -1) continue;
-                }
-            } else {
-                idx = text.indexOf(word, currentPos);
-                if (idx === -1) continue;
-            }
-            located.push({
-                ...t,
-                start: idx,
-                end: idx + word.length,
-                word: text.slice(idx, idx + word.length)
-            });
-            currentPos = idx + word.length;
-        }
-        return located;
-    }
-
-    // BIO-метки → группа
-    const bioToGroup = {
-        LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
-        ORG: 'ORG', ORGANIZATION: 'ORG',
-        LOC: 'LOC', GPE: 'GPE', CITY: 'LOC', STREET: 'LOC',
-        MISC: 'MISC'
-    };
-
-    // Фильтр однобуквенных PER
-    function isSingleCharJunk(entity) {
-        return entity.entity_group === 'PER' && entity.word.length === 1 && !entity.word.match(/[А-ЯЁA-Z]\.?/);
-    }
-
-    // Склеивание соседних PER
-    function mergePersonTokens(entities, text) {
-        const merged = [];
-        for (const e of entities) {
-            if (merged.length === 0) {
-                merged.push(e);
-                continue;
-            }
-            const prev = merged[merged.length-1];
-            if (prev.entity_group === 'PER' && e.entity_group === 'PER' && e.start <= prev.end + 2) {
-                prev.end = e.end;
-                prev.word = text.slice(prev.start, e.end);
-                prev.score = Math.min(prev.score, e.score);
-            } else {
-                merged.push(e);
-            }
-        }
-        return merged;
-    }
-
-    // Построение чекбоксов
-    function renderTypeSettings() {
-        let html = '';
-        for (const [type, cfg] of Object.entries(entityConfig)) {
-            html += `
-            <div class="setting">
-                <label>
-                    <input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}>
-                    ${cfg.label} (${type})
-                </label>
-            </div>`;
-        }
-        typeSettings.innerHTML = html;
-        document.querySelectorAll('.type-check').forEach(cb => {
-            cb.addEventListener('change', (e) => {
-                entityConfig[e.target.dataset.type].enabled = e.target.checked;
-            });
+  // Regex‑сущности (те же, но теперь они будут добавлены после обработки чанков)
+  function findRegexEntities(text, baseOffset = 0) {
+    const results = [];
+    const patterns = [
+      { regex: /\b\d{4}[\s-]?\d{6}\b/g, type: 'PASSPORT' },
+      { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS' },
+      { regex: /\b\d{12}\b/g, type: 'INN' },
+      { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN' },
+      { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE' },
+      { regex: /\b[87]\d{10}\b/g, type: 'PHONE' },
+      { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL' },
+      { regex: /\b[A-Za-z0-9._%+-]+\.(?:yandex|mail|gmail|list|bk|inbox|rambler)\.ru\b/g, type: 'EMAIL' },
+      { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/g, type: 'ORG' },
+      { regex: /«[А-ЯЁA-Z][^»]{0,50}»/g, type: 'TITLE' }
+    ];
+    for (const { regex, type } of patterns) {
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        const word = match[0];
+        if (type === 'INN' && !isValidINN(word)) continue;
+        if (type === 'SNILS' && !isValidSNILS(word)) continue;
+        if (type === 'OGRN' && !isValidOGRN(word)) continue;
+        results.push({
+          start: match.index + baseOffset,
+          end: match.index + word.length + baseOffset,
+          word,
+          entity_group: type,
+          score: 1.0
         });
+      }
+    }
+    return results;
+  }
+
+  // Функция locateTokens (поиск позиций для одного чанка)
+  function locateTokens(tokens, text) {
+    const located = [];
+    let currentPos = 0;
+    for (const t of tokens) {
+      let word = t.word;
+      const isSubword = word.startsWith('##');
+      if (isSubword) word = word.slice(2);
+      let idx;
+      if (isSubword) {
+        idx = text.indexOf(word, currentPos);
+        if (idx !== currentPos) continue; // подслово должно примыкать
+      } else {
+        idx = text.indexOf(word, currentPos);
+        if (idx === -1) continue;
+      }
+      located.push({
+        ...t,
+        start: idx,
+        end: idx + word.length,
+        word: text.slice(idx, idx + word.length)
+      });
+      currentPos = idx + word.length;
+    }
+    return located;
+  }
+
+  const bioToGroup = {
+    LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
+    ORG: 'ORG', ORGANIZATION: 'ORG',
+    LOC: 'LOC', GPE: 'GPE', CITY: 'LOC', STREET: 'LOC', HOUSE: 'LOC',
+    MISC: 'MISC'
+  };
+
+  function isSingleCharJunk(e) {
+    return e.entity_group === 'PER' && e.word.length === 1 && !e.word.match(/[А-ЯЁA-Z]\.?/);
+  }
+
+  function mergePersonTokens(entities, text) {
+    const merged = [];
+    for (const e of entities) {
+      if (merged.length === 0) {
+        merged.push(e);
+        continue;
+      }
+      const prev = merged[merged.length-1];
+      if (prev.entity_group === 'PER' && e.entity_group === 'PER' && e.start <= prev.end + 2) {
+        prev.end = e.end;
+        prev.word = text.slice(prev.start, e.end);
+        prev.score = Math.min(prev.score, e.score);
+      } else {
+        merged.push(e);
+      }
+    }
+    return merged;
+  }
+
+  // Чанкование и обработка NER
+  async function processLongText(text, threshold) {
+    const MAX_TOKENS = 450;
+    const OVERLAP = 50;
+    const tokenized = await tokenizer(text);
+    const inputIds = tokenized.input_ids;
+    const totalTokens = inputIds.length;
+
+    // Если текст короткий, просто обрабатываем целиком
+    if (totalTokens <= MAX_TOKENS + OVERLAP) {
+      const rawTokens = await nerPipeline(text, { group_entities: true });
+      const located = locateTokens(rawTokens, text);
+      return { locatedTokens: located, offsets: null };
     }
 
-    // --- Загрузка модели ---
-    loadBtn.addEventListener('click', async () => {
-        loadBtn.disabled = true;
-        loadBtn.textContent = '⏳ Загрузка...';
-        status.textContent = '⏳ Инициализация...';
-        progressBar.className = 'progress-bar';
-        progressBar.style.width = '10%';
+    // Иначе чанкинг
+    let allLocated = [];
+    let chunkStart = 0;
+    const chunks = [];
+    // Собираем чанки в виде подстрок с перекрытием
+    while (chunkStart < totalTokens) {
+      const chunkEnd = Math.min(chunkStart + MAX_TOKENS, totalTokens);
+      const chunkIds = inputIds.slice(chunkStart, chunkEnd);
+      const chunkText = await tokenizer.decode(chunkIds, { skip_special_tokens: true });
+      chunks.push({ text: chunkText, start: chunkStart, end: chunkEnd });
+      chunkStart += (MAX_TOKENS - OVERLAP);
+    }
 
-        try {
-            const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
-            nerPipeline = await pipeline('ner', MODEL_ID, {
-                progress_callback: (e) => {
-                    if (e.status === 'download' || e.status === 'progress') {
-                        if (e.total && e.loaded) {
-                            const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
-                            progressBar.style.width = `${pct}%`;
-                            status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
-                        }
-                    } else if (e.status === 'ready') {
-                        progressBar.style.width = '100%';
-                        status.textContent = '✅ Модель загружена!';
-                    }
-                }
-            });
-            modelLoaded = true;
-            progressBar.className = 'progress-bar success';
+    // Обрабатываем каждый чанк
+    for (let i = 0; i < chunks.length; i++) {
+      const { text: chunkText } = chunks[i];
+      const raw = await nerPipeline(chunkText, { group_entities: true });
+      const located = locateTokens(raw, chunkText);
+      // Здесь нужно пересчитать позиции с учётом смещения внутри исходного текста
+      // Упростим: ищем смещение, декодируя начало чанка
+      const originalStart = chunkText.length > 0 ? text.indexOf(chunkText) : 0;
+      const withOffset = located.map(t => ({
+        ...t,
+        start: t.start + originalStart,
+        end: t.end + originalStart
+      }));
+      allLocated = allLocated.concat(withOffset);
+      // Обновляем прогресс
+      const progress = Math.round(((i+1) / chunks.length) * 80) + 10;
+      progressBar.style.width = progress + '%';
+      status.textContent = `⏳ Обработка чанка ${i+1}/${chunks.length}...`;
+      // Небольшая пауза, чтобы не блокировать UI
+      await new Promise(r => setTimeout(r, 10));
+    }
+    return { locatedTokens: allLocated, offsets: null };
+  }
+
+  // Построение словаря повторяющихся сущностей
+  function buildEntityNumbering(entities, text) {
+    const typeMap = {}; // { тип: { оригинал: номер } }
+    const entityNumbers = [];
+    for (const e of entities) {
+      const type = e.entity_group;
+      if (!typeMap[type]) typeMap[type] = {};
+      const orig = text.slice(e.start, e.end);
+      if (!typeMap[type][orig]) {
+        const num = Object.keys(typeMap[type]).length + 1;
+        typeMap[type][orig] = num;
+      }
+      const num = typeMap[type][orig];
+      entityNumbers.push(num);
+    }
+    return { typeMap, entityNumbers };
+  }
+
+  // UI
+  function renderTypeSettings() {
+    let html = '';
+    for (const [type, cfg] of Object.entries(entityConfig)) {
+      html += `
+      <div class="setting">
+        <label>
+          <input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}>
+          ${cfg.label} (${type})
+        </label>
+      </div>`;
+    }
+    typeSettings.innerHTML = html;
+    document.querySelectorAll('.type-check').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        entityConfig[e.target.dataset.type].enabled = e.target.checked;
+      });
+    });
+  }
+
+  // Загрузка модели
+  loadBtn.addEventListener('click', async () => {
+    loadBtn.disabled = true;
+    loadBtn.textContent = '⏳ Загрузка...';
+    status.textContent = '⏳ Инициализация...';
+    progressBar.className = 'progress-bar';
+    progressBar.style.width = '10%';
+
+    try {
+      const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
+      nerPipeline = await pipeline('ner', MODEL_ID, {
+        progress_callback: (e) => {
+          if (e.status === 'download' || e.status === 'progress') {
+            if (e.total && e.loaded) {
+              const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
+              progressBar.style.width = `${pct}%`;
+              status.textContent = `⏳ ${e.file || 'Загрузка'}: ${pct}%`;
+            }
+          } else if (e.status === 'ready') {
             progressBar.style.width = '100%';
-            status.textContent = '✅ Модель готова! Выберите типы и нажмите «Анонимизировать»';
-            loadBtn.textContent = '✅ Загружено';
-            loadBtn.style.background = '#10b981';
-            textarea.disabled = false;
-            runBtn.disabled = false;
-            renderTypeSettings();
-        } catch (err) {
-            console.error(err);
-            progressBar.className = 'progress-bar error';
-            progressBar.style.width = '100%';
-            status.textContent = `❌ Ошибка: ${err.message}`;
-            loadBtn.disabled = false;
-            loadBtn.textContent = '🔄 Загрузить модель';
+            status.textContent = '✅ Модель загружена!';
+          }
         }
-    });
+      });
+      tokenizer = nerPipeline.tokenizer;
+      modelLoaded = true;
+      progressBar.className = 'progress-bar success';
+      progressBar.style.width = '100%';
+      status.textContent = '✅ Модель готова!';
+      loadBtn.textContent = '✅ Загружено';
+      loadBtn.style.background = '#10b981';
+      textarea.disabled = false;
+      runBtn.disabled = false;
+      renderTypeSettings();
+    } catch (err) {
+      console.error(err);
+      progressBar.className = 'progress-bar error';
+      progressBar.style.width = '100%';
+      status.textContent = `❌ Ошибка: ${err.message}`;
+      loadBtn.disabled = false;
+      loadBtn.textContent = '🔄 Загрузить модель';
+    }
+  });
 
-    // --- Анонимизация ---
-    runBtn.addEventListener('click', async () => {
-        const text = textarea.value.trim();
-        if (!text) { status.textContent = '⚠️ Введите текст'; return; }
-        if (!modelLoaded) { status.textContent = '⚠️ Сначала загрузите модель'; return; }
+  // Анонимизация
+  runBtn.addEventListener('click', async () => {
+    const text = textarea.value.trim();
+    if (!text) { status.textContent = '⚠️ Введите текст'; return; }
+    if (!modelLoaded) { status.textContent = '⚠️ Сначала загрузите модель'; return; }
 
-        runBtn.disabled = true;
-        status.textContent = '⏳ Анализ...';
-        progressBar.className = 'progress-bar';
-        progressBar.style.width = '20%';
-        debugPanel.classList.remove('show');
-        lastDebug = '';
+    runBtn.disabled = true;
+    status.textContent = '⏳ Анализ...';
+    progressBar.className = 'progress-bar';
+    progressBar.style.width = '20%';
+    debugPanel.classList.remove('show');
+    lastDebug = '';
 
-        try {
-            const threshold = parseFloat(nerThreshold.value);
+    try {
+      const threshold = parseFloat(nerThreshold.value);
+      // 1. NER (чанкинг, если нужно)
+      progressBar.style.width = '25%';
+      const { locatedTokens } = await processLongText(text, threshold);
+      lastDebug += `🔍 NER-токены с позициями (${locatedTokens.length}):\n${JSON.stringify(locatedTokens, null, 2)}\n\n`;
 
-            const rawTokens = await nerPipeline(text, { group_entities: true });
-            lastDebug += `🔍 Сырые NER‑токены (${rawTokens.length}):\n${JSON.stringify(rawTokens, null, 2)}\n\n`;
+      // 2. Преобразуем в сущности
+      const nerEntities = locatedTokens
+        .filter(t => t.score >= threshold)
+        .map(t => {
+          const tag = t.entity;
+          const label = tag.split('-').slice(1).join('-');
+          const group = bioToGroup[label] || label || 'MISC';
+          return {
+            start: t.start,
+            end: t.end,
+            word: text.slice(t.start, t.end),
+            entity_group: group,
+            score: t.score
+          };
+        })
+        .filter(e => !isSingleCharJunk(e));
 
-            const located = locateTokens(rawTokens, text);
-            lastDebug += `📍 Токены с позициями (${located.length}):\n${JSON.stringify(located, null, 2)}\n\n`;
+      // 3. Объединяем PER
+      const nerMerged = mergePersonTokens(nerEntities, text);
+      lastDebug += `🧩 NER после объединения PER (${nerMerged.length}):\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
 
-            const nerEntities = located
-                .filter(t => t.score >= threshold)
-                .map(t => {
-                    const tag = t.entity;
-                    const label = tag.split('-').slice(1).join('-');
-                    const group = bioToGroup[label] || label || 'MISC';
-                    return {
-                        start: t.start,
-                        end: t.end,
-                        word: t.word,
-                        entity_group: group,
-                        score: t.score
-                    };
-                })
-                .filter(e => !isSingleCharJunk(e));  // удаляем одиночные буквы
+      // 4. Regex‑сущности (по всему тексту)
+      const regexEntities = findRegexEntities(text, 0);
+      lastDebug += `🔎 Regex-сущности (${regexEntities.length}):\n${JSON.stringify(regexEntities.map(e=>({word:e.word, type:e.entity_group})), null, 2)}\n\n`;
 
-            const nerMerged = mergePersonTokens(nerEntities, text);
-            lastDebug += `🧩 NER‑сущности после объединения PER: ${nerMerged.length}\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
+      // 5. Объединяем все включённые типы
+      let all = [...nerMerged, ...regexEntities]
+        .filter(e => entityConfig[e.entity_group]?.enabled);
 
-            const regexEntities = findRegexEntities(text);
-            lastDebug += `🔎 Regex‑сущности (${regexEntities.length}):\n${JSON.stringify(regexEntities.map(e=>({word:e.word, type:e.entity_group})), null, 2)}\n\n`;
-
-            let all = [...nerMerged, ...regexEntities]
-                .filter(e => entityConfig[e.entity_group]?.enabled);
-
-            all.sort((a,b) => a.start - b.start);
-            const finalEntities = [];
-            for (const e of all) {
-                if (finalEntities.length === 0 || e.start >= finalEntities[finalEntities.length-1].end) {
-                    finalEntities.push(e);
-                } else {
-                    const prev = finalEntities[finalEntities.length-1];
-                    if (e.score > prev.score || (e.score === prev.score && (e.end-e.start) > (prev.end-prev.start))) {
-                        finalEntities[finalEntities.length-1] = e;
-                    }
-                }
-            }
-            lastDebug += `✅ Итоговые сущности (${finalEntities.length}):\n${finalEntities.map(e=>`  [${e.start}-${e.end}] ${e.word} → ${e.entity_group} (${e.score.toFixed(3)})`).join('\n')}\n\n`;
-
-            let result = text;
-            const replacements = [];
-            for (let i = finalEntities.length-1; i >= 0; i--) {
-                const e = finalEntities[i];
-                const label = entityConfig[e.entity_group]?.label || e.entity_group;
-                replacements.push({...e, label});
-                result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
-            }
-            lastDebug += `📝 Замены: ${replacements.length}\n${replacements.map(r=>`  [${r.start}-${r.end}] "${r.original||r.word}" → [${r.label}]`).join('\n')}\n\n📄 Результат:\n${result}`;
-
-            textarea.value = result;
-            progressBar.className = 'progress-bar success';
-            progressBar.style.width = '100%';
-            status.textContent = `✅ Готово! Заменено ${replacements.length} сущностей.`;
-            if (replacements.length === 0) {
-                debugPanel.textContent = lastDebug;
-                debugPanel.classList.add('show');
-                status.textContent += ' (см. отладку)';
-            }
-        } catch (err) {
-            console.error(err);
-            progressBar.className = 'progress-bar error';
-            progressBar.style.width = '100%';
-            status.textContent = '❌ Ошибка при анализе.';
-            lastDebug += `\n❌ Ошибка: ${err.message}`;
-        } finally {
-            runBtn.disabled = false;
-        }
-    });
-
-    nerThreshold.addEventListener('input', () => {
-        thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
-    });
-
-    debugToggle.addEventListener('click', () => {
-        if (lastDebug) {
-            debugPanel.textContent = lastDebug;
-            debugPanel.classList.toggle('show');
+      // 6. Сортировка и разрешение перекрытий
+      all.sort((a,b) => a.start - b.start);
+      const finalEntities = [];
+      for (const e of all) {
+        if (finalEntities.length === 0 || e.start >= finalEntities[finalEntities.length-1].end) {
+          finalEntities.push(e);
         } else {
-            debugPanel.textContent = 'Обработайте текст, чтобы увидеть отладку';
-            debugPanel.classList.add('show');
+          const prev = finalEntities[finalEntities.length-1];
+          if (e.score > prev.score || (e.score === prev.score && (e.end-e.start) > (prev.end-prev.start))) {
+            finalEntities[finalEntities.length-1] = e;
+          }
         }
-    });
+      }
 
-    renderTypeSettings();
+      // 7. Нумерация повторяющихся строк
+      const { typeMap, entityNumbers } = buildEntityNumbering(finalEntities, text);
+      lastDebug += `✅ Итоговые сущности (${finalEntities.length}):\n`;
+      finalEntities.forEach((e, idx) => {
+        const num = entityNumbers[idx];
+        const label = entityConfig[e.entity_group].label;
+        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${e.entity_group}-${num} (${e.score.toFixed(3)})\n`;
+      });
+
+      // 8. Замена с конца, используя номера
+      let result = text;
+      const replacements = [];
+      for (let i = finalEntities.length-1; i >= 0; i--) {
+        const e = finalEntities[i];
+        const label = entityConfig[e.entity_group].label;
+        const num = entityNumbers[i];
+        const masked = `[${label}-${num}]`;
+        replacements.push({ start: e.start, end: e.end, original: text.slice(e.start, e.end), masked });
+        result = result.slice(0, e.start) + masked + result.slice(e.end);
+      }
+      lastDebug += `\n📝 Замены: ${replacements.length}\n`;
+      replacements.reverse().forEach(r => lastDebug += `  [${r.start}-${r.end}] "${r.original}" → ${r.masked}\n`);
+
+      textarea.value = result;
+      progressBar.className = 'progress-bar success';
+      progressBar.style.width = '100%';
+      status.textContent = `✅ Готово! Заменено ${replacements.length} сущностей.`;
+      if (replacements.length === 0) {
+        debugPanel.textContent = lastDebug;
+        debugPanel.classList.add('show');
+        status.textContent += ' (см. отладку)';
+      }
+    } catch (err) {
+      console.error(err);
+      progressBar.className = 'progress-bar error';
+      progressBar.style.width = '100%';
+      status.textContent = '❌ Ошибка при анализе.';
+      lastDebug += `\n❌ Ошибка: ${err.message}`;
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+
+  // Порог
+  nerThreshold.addEventListener('input', () => {
     thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
+  });
+
+  // Отладка
+  debugToggle.addEventListener('click', () => {
+    if (lastDebug) {
+      debugPanel.textContent = lastDebug;
+      debugPanel.classList.toggle('show');
+    } else {
+      debugPanel.textContent = 'Обработайте текст, чтобы увидеть отладку';
+      debugPanel.classList.add('show');
+    }
+  });
+
+  renderTypeSettings();
+  thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
 </script>
 </body>
 </html>
