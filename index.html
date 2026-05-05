@@ -3,134 +3,201 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анонимизатор (оптимизировано для iOS)</title>
+    <title>Анонимизатор (DistilBERT ONNX)</title>
     <style>
-        body { font-family: system-ui; max-width: 800px; margin: 2em auto; padding: 0 1em; background: #f8f9fa; }
-        textarea { width: 100%; height: 200px; padding: 0.8em; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
-        button { padding: 0.8em 2em; font-size: 16px; background: #2563eb; color: white; border: none; border-radius: 6px; margin: 0.5em 0; }
-        button:disabled { background: #94a3b8; }
-        #status { margin: 0.5em 0; font-weight: 500; }
-        #progress { width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; }
-        #progress-fill { height: 100%; width: 0%; background: #10b981; transition: width 0.2s; }
-        .note { font-size: 0.85em; color: #64748b; margin-top: 1.5em; }
+        :root { --primary: #2563eb; --success: #10b981; --error: #ef4444; --bg: #f8fafc; --card: #ffffff; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 850px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: #0f172a; }
+        .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        textarea { width: 100%; height: 220px; margin: 1rem 0; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; resize: vertical; background: #f8fafc; }
+        textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
+        .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+        button { padding: 0.7rem 1.4rem; font-size: 15px; font-weight: 500; cursor: pointer; border: none; border-radius: 8px; transition: all 0.2s; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #loadBtn { background: var(--primary); color: white; }
+        #loadBtn:hover:not(:disabled) { background: #1d4ed8; }
+        #runBtn { background: var(--success); color: white; }
+        #runBtn:hover:not(:disabled) { background: #059669; }
+        #status { margin: 0.8rem 0 0.2rem; font-weight: 500; min-height: 1.2rem; }
+        .progress { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-bottom: 1rem; }
+        .progress-bar { height: 100%; width: 0%; background: var(--primary); transition: width 0.3s; }
+        .progress-bar.success { background: var(--success); }
+        .progress-bar.error { background: var(--error); }
+        .hint { font-size: 0.85rem; color: #64748b; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.8rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.9rem; }
     </style>
 </head>
 <body>
-    <h1>🔒 Анонимизатор текстов</h1>
-    <textarea id="inputText" placeholder="Введите текст...">Иванов Иван работает в ООО Яндекс.</textarea>
-    <button id="anonymizeBtn" disabled>▶️ Анонимизировать</button>
-    <div id="status">Нажмите кнопку для загрузки модели</div>
-    <div id="progress"><div id="progress-fill"></div></div>
-    <div class="note">
-        <strong>Приватность:</strong> Модель загружается один раз (~12 МБ), далее работает оффлайн. 
-        Текст обрабатывается в браузере, данные не отправляются на сервер.
+    <div class="card">
+        <h1>🔒 Анонимизация текстов</h1>
+        
+        <div id="fileWarning" class="warning" style="display:none">
+            ⚠️ <strong>Ошибка протокола:</strong> Вы открыли файл через <code>file://</code>. 
+            Загрузка моделей заблокирована браузером. Запустите локальный сервер:
+            <br><code>python -m http.server 8000</code> → <code>http://localhost:8000</code>
+        </div>
+
+        <div class="btn-group">
+            <button id="loadBtn">🔄 Загрузить модель</button>
+            <button id="runBtn" disabled>🔒 Анонимизировать</button>
+        </div>
+        
+        <div id="status">Нажмите "Загрузить модель"</div>
+        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+        
+        <textarea id="inputText" disabled placeholder="Текст появится после успешной загрузки модели..."></textarea>
+        
+        <div class="hint">
+            <strong>Как работает:</strong> Модель (~45 МБ) загружается один раз и сохраняется в кэше браузера. 
+            Все вычисления выполняются локально. Данные не покидают ваш компьютер.
+        </div>
     </div>
 
     <script type="module">
         import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 
-        // ✅ КРИТИЧЕСКИ ВАЖНО для iOS/CDN:
+        // Проверка на file:// протокол
+        if (window.location.protocol === 'file:') {
+            document.getElementById('fileWarning').style.display = 'block';
+        }
+
+        // Настройки окружения
         env.allowLocalModels = false;
         env.useBrowserCache = true;
-        
-        // ✅ Правильный путь к jsdelivr-зеркалу моделей:
-        env.remoteHost = 'https://cdn.jsdelivr.net/gh/huggingface/transformers.js@main/';
-        env.remotePathTemplate = '{model}/resolve/{revision}/{path}';
 
-        const status = document.getElementById('status');
-        const progress = document.getElementById('progress-fill');
-        const btn = document.getElementById('anonymizeBtn');
+        const loadBtn = document.getElementById('loadBtn');
+        const runBtn = document.getElementById('runBtn');
         const textarea = document.getElementById('inputText');
+        const status = document.getElementById('status');
+        const progressBar = document.getElementById('progressBar');
 
         let pipe;
+        let modelLoaded = false;
 
-        // Загружаем модель ПО КЛИКУ (требование iOS Safari)
-        btn.addEventListener('click', async () => {
-            if (!pipe) {
-                btn.disabled = true;
-                status.textContent = '⏳ Загрузка модели (~12 МБ)...';
-                
-                try {
-                    // ✅ Используем квантованную модель (int8) для iOS
-                    pipe = await pipeline(
-                        'token-classification',
-                        'onnx-community/distilbert-base-multilingual-cased-finetuned-ner-int8',
-                        {
-                            progress_callback: (e) => {
-                                if (e.status === 'download' && e.total) {
-                                    const pct = Math.round((e.loaded / e.total) * 100);
-                                    status.textContent = `⏳ Загрузка: ${pct}%`;
-                                    progress.style.width = `${pct}%`;
-                                } else if (e.status === 'ready') {
-                                    status.textContent = '✅ Модель загружена!';
-                                    progress.style.width = '100%';
+        // --- ЭТАП 1: Загрузка модели ---
+        loadBtn.addEventListener('click', async () => {
+            loadBtn.disabled = true;
+            loadBtn.textContent = '⏳ Загрузка...';
+            status.textContent = '⏳ Подключение к Hugging Face...';
+            progressBar.className = 'progress-bar';
+            progressBar.style.width = '10%';
+
+            try {
+                // Используем официальную ONNX-модель для мультиязычного NER
+                pipe = await pipeline(
+                    'token-classification',
+                    'onnx-community/distilbert-base-multilingual-cased-finetuned-ner',
+                    {
+                        progress_callback: (e) => {
+                            if (e.status === 'download' || e.status === 'progress') {
+                                if (e.total && e.loaded) {
+                                    const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
+                                    progressBar.style.width = `${pct}%`;
+                                    status.textContent = `⏳ Загрузка файлов: ${pct}%`;
+                                } else {
+                                    status.textContent = '⏳ Загрузка весов модели...';
                                 }
                             }
                         }
-                    );
-                } catch (err) {
-                    console.error(err);
-                    status.innerHTML = `❌ Ошибка: ${err.message}<br><small>Попробуйте обновить страницу или проверить соединение</small>`;
-                    progress.style.background = '#ef4444';
-                    btn.disabled = false;
-                    return;
-                }
-            }
+                    }
+                );
 
-            // --- Обработка текста ---
+                // Успех
+                modelLoaded = true;
+                progressBar.className = 'progress-bar success';
+                progressBar.style.width = '100%';
+                status.textContent = '✅ Модель готова к работе!';
+                loadBtn.textContent = '✅ Загружено';
+                loadBtn.style.background = '#10b981';
+                textarea.disabled = false;
+                runBtn.disabled = false;
+            } catch (err) {
+                console.error('Ошибка загрузки:', err);
+                progressBar.className = 'progress-bar error';
+                progressBar.style.width = '100%';
+                
+                if (err.message.includes('401') || err.message.includes('Unauthorized')) {
+                    status.innerHTML = '❌ Ошибка 401: Откройте страницу через <code>http://localhost</code>';
+                } else if (err.message.includes('404')) {
+                    status.textContent = '❌ Модель не найдена. Проверьте соединение.';
+                } else {
+                    status.textContent = `❌ Ошибка: ${err.message}`;
+                }
+                loadBtn.disabled = false;
+                loadBtn.textContent = '🔄 Загрузить модель';
+            }
+        });
+
+        // --- ЭТАП 2: Обработка текста ---
+        runBtn.addEventListener('click', async () => {
             const text = textarea.value.trim();
             if (!text) {
-                status.textContent = '⚠️ Введите текст';
-                btn.disabled = false;
+                status.textContent = '⚠️ Введите текст для обработки';
                 return;
             }
 
-            status.textContent = '⏳ Анализ...';
-            progress.style.width = '0%';
-            progress.style.background = '#10b981';
+            runBtn.disabled = true;
+            status.textContent = '⏳ Анализ текста нейросетью...';
+            progressBar.className = 'progress-bar';
+            progressBar.style.width = '10%';
 
             try {
-                // Простая обработка без чанкования (для совместимости с iOS)
-                const results = await pipe(text, { aggregation_strategy: 'simple' });
-                
-                // Фильтрация и замена
-                const THRESHOLD = 0.6;
-                const labels = { PER: 'ФИО', PERSON: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ', LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ' };
-                
-                let result = text;
-                let count = 0;
-                
-                // Сортируем по позиции и заменяем с конца
-                const entities = results
-                    .filter(e => e.score >= THRESHOLD)
-                    .sort((a, b) => a.start - b.start);
-                
-                // Убираем перекрытия
-                const merged = [];
-                for (const e of entities) {
-                    if (!merged.length || e.start >= merged[merged.length-1].end) {
-                        merged.push(e);
-                    } else if (e.score > merged[merged.length-1].score) {
-                        merged[merged.length-1] = e;
+                // Разбиваем на чанки для стабильности на длинных текстах
+                const CHUNK_SIZE = 450;
+                const OVERLAP = 50;
+                const chunks = [];
+                for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
+                    chunks.push({ text: text.slice(i, i + CHUNK_SIZE), offset: i });
+                }
+
+                const allEntities = [];
+                for (let i = 0; i < chunks.length; i++) {
+                    progressBar.style.width = `${10 + Math.round(((i + 1) / chunks.length) * 80)}%`;
+                    const chunk = chunks[i];
+                    
+                    // aggregation_strategy: 'simple' автоматически склеивает B-PER/I-PER
+                    const results = await pipe(chunk.text, { aggregation_strategy: 'simple' });
+                    
+                    for (const ent of results) {
+                        allEntities.push({
+                            start: ent.start + chunk.offset,
+                            end: ent.end + chunk.offset,
+                            type: ent.entity_group || ent.entity,
+                            score: ent.score
+                        });
                     }
                 }
-                
-                // Замена с конца
-                for (let i = merged.length - 1; i >= 0; i--) {
-                    const e = merged[i];
-                    const label = labels[e.entity_group] || e.entity_group?.toUpperCase() || 'СУЩНОСТЬ';
-                    result = result.slice(0, e.start) + `[${label}]` + result.slice(e.end);
-                    count++;
+
+                // Фильтрация по уверенности и удаление перекрытий
+                const THRESHOLD = 0.6;
+                const valid = allEntities.filter(e => e.score >= THRESHOLD).sort((a, b) => a.start - b.start);
+                const merged = [];
+                for (const e of valid) {
+                    if (!merged.length || e.start >= merged[merged.length - 1].end) {
+                        merged.push(e);
+                    } else if (e.score > merged[merged.length - 1].score) {
+                        merged[merged.length - 1] = e;
+                    }
                 }
-                
+
+                // Замена сущностей (в обратном порядке, чтобы индексы не сбились)
+                let result = text;
+                merged.reverse().forEach(ent => {
+                    const labelMap = { PER: 'ФИО', PERSON: 'ФИО', ORG: 'ОРГАНИЗАЦИЯ', LOC: 'МЕСТО', GPE: 'ЛОКАЦИЯ', MISC: 'ДРУГОЕ' };
+                    const label = labelMap[ent.type] || ent.type.toUpperCase();
+                    result = result.slice(0, ent.start) + `[${label}]` + result.slice(ent.end);
+                });
+
                 textarea.value = result;
-                status.textContent = `✅ Готово! Заменено ${count} сущностей.`;
+                progressBar.className = 'progress-bar success';
+                progressBar.style.width = '100%';
+                status.textContent = `✅ Готово! Найдено и заменено ${merged.length} сущностей.`;
             } catch (err) {
-                console.error(err);
-                status.textContent = '❌ Ошибка обработки текста';
-                progress.style.background = '#ef4444';
+                console.error('Ошибка обработки:', err);
+                progressBar.className = 'progress-bar error';
+                progressBar.style.width = '100%';
+                status.textContent = '❌ Ошибка при анализе текста. Попробуйте сократить текст.';
             } finally {
-                btn.disabled = false;
+                runBtn.disabled = false;
             }
         });
     </script>
