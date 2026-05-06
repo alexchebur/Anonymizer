@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Анонимизатор (Улучшенные Regex)</title>
+  <title>Анонимизатор (Улучшенная агрегация + чанкинг)</title>
   <style>
     :root {
       --primary: #2563eb; --success: #10b981; --error: #ef4444;
@@ -83,7 +83,7 @@
 </head>
 <body>
 <div class="card">
-  <h1>🔒 Анонимизатор (Улучшенные Regex)</h1>
+  <h1>🔒 Анонимизатор (Улучшенная агрегация)</h1>
 
   <div id="fileWarning" class="warning">
     ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
@@ -96,7 +96,15 @@
   </div>
 
   <div id="status" class="status">Нажмите «Загрузить модель»</div>
-  <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+  
+  <!-- Прогресс загрузки модели -->
+  <div class="progress" title="Загрузка модели">
+    <div class="progress-bar" id="modelProgressBar"></div>
+  </div>
+  <!-- Прогресс обработки текста -->
+  <div class="progress" title="Обработка текста">
+    <div class="progress-bar" id="textProgressBar"></div>
+  </div>
 
   <div class="settings" id="typeSettings"></div>
 
@@ -115,9 +123,8 @@
 
   <div class="hint">
     <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
-    <strong>Regex‑типы:</strong> организации, email, телефон, паспорт (улучшенный), даты, СНИЛС, ИНН, ОГРН<br>
-    <strong>Резервный слой:</strong> одиночные слова с заглавной буквы можно включить как «ФИО?»<br>
-    <strong>Приватность:</strong> всё локально
+    <strong>Улучшения:</strong> склейка всех типов сущностей, чанкинг длинных текстов, прогресс-бары<br>
+    <strong>Regex‑типы:</strong> паспорт (улучшенный), даты, СНИЛС, ИНН, ОГРН, телефон, email, организации
   </div>
 </div>
 
@@ -136,7 +143,8 @@
   const debugToggle = document.getElementById('debugToggle');
   const textarea = document.getElementById('inputText');
   const status = document.getElementById('status');
-  const progressBar = document.getElementById('progressBar');
+  const modelProgressBar = document.getElementById('modelProgressBar');
+  const textProgressBar = document.getElementById('textProgressBar');
   const debugPanel = document.getElementById('debugPanel');
   const nerThreshold = document.getElementById('nerThreshold');
   const thresholdValue = document.getElementById('thresholdValue');
@@ -149,14 +157,14 @@
   // Конфигурация сущностей
   const entityConfig = {
     PER:        { label: 'ФИО',             enabled: true },
-    SINGLE_NAME:{ label: 'ФИО?',            enabled: false }, // резервный
+    SINGLE_NAME:{ label: 'ФИО?',            enabled: false },
     ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
     TITLE:      { label: 'НАЗВАНИЕ',        enabled: false },
     LOC:        { label: 'МЕСТО',           enabled: true },
     GPE:        { label: 'ЛОКАЦИЯ',         enabled: true },
     MISC:       { label: 'ДРУГОЕ',          enabled: false },
     PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
-    DATE_ISSUE: { label: 'ДАТА',            enabled: true }, // Новый тип для дат
+    DATE_ISSUE: { label: 'ДАТА',            enabled: true },
     SNILS:      { label: 'СНИЛС',           enabled: true },
     INN:        { label: 'ИНН',             enabled: true },
     OGRN:       { label: 'ОГРН',            enabled: true },
@@ -164,7 +172,7 @@
     EMAIL:      { label: 'EMAIL',           enabled: true }
   };
 
-  // --- Валидация (оставлена для строгих числовых кодов) ---
+  // --- Валидация ---
   function isValidINN(inn) {
     if (!/^\d{12}$/.test(inn)) return false;
     const d = inn.split('').map(Number);
@@ -199,45 +207,28 @@
   function findRegexEntities(text, baseOffset = 0) {
     const results = [];
     
-    // 1. ПАСПОРТ (Улучшенный паттерн)
-    // Ловит: "паспорт серия 65 09 №690054", "серия 12-34 567890", "12 34 567890"
     const passportRegex = /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?\d{2}\s*[\s\-]?\s*\d{2}\s*(?:№|номер|N)?\s*\d{6}\b/gi;
-    
-    // 2. ДАТЫ (Новый паттерн)
-    // Ловит: 01.01.2020, 01/01/20, 01-01-2020
     const dateRegex = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g;
 
-    // 3. Остальные стандартные паттерны
     const patterns = [
-      { regex: passportRegex, type: 'PASSPORT', validate: null }, // Паспорт валидируем по структуре regex
+      { regex: passportRegex, type: 'PASSPORT', validate: null },
       { regex: dateRegex, type: 'DATE_ISSUE', validate: null },
-      
       { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
       { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
       { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', validate: isValidOGRN },
-      
-      // Телефоны (более жадный захват)
       { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', validate: null },
       { regex: /\b[87]\d{10}\b/g, type: 'PHONE', validate: null },
-      
-      // Email
       { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null },
-      
-      // Организации и названия
       { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/g, type: 'ORG', validate: null },
       { regex: /«[А-ЯЁA-Z][^»]{0,50}»/g, type: 'TITLE', validate: null }
     ];
 
     for (const { regex, type, validate } of patterns) {
       let match;
-      // Сброс lastIndex для глобальных регулярок важен при повторных вызовах
-      regex.lastIndex = 0; 
+      regex.lastIndex = 0;
       while ((match = regex.exec(text)) !== null) {
         const word = match[0];
-        
-        // Если есть функция валидации (для ИНН/СНИЛС/ОГРН), проверяем
         if (validate && !validate(word)) continue;
-
         results.push({
           start: match.index + baseOffset,
           end: match.index + word.length + baseOffset,
@@ -250,14 +241,13 @@
     return results;
   }
 
-  // Резервный поиск одиночных слов с заглавной буквы
+  // Резервный поиск одиночных слов
   function findSingleNames(text) {
     const words = [];
     const regex = /\b([А-ЯЁ][а-яё]{1,30})\b/g;
     const stopWords = new Set([
-      'ООО', 'ЗАО', 'АО', 'ПАО', 'ОАО', 'ИП',
-      'Тел', 'Телефон', 'Email', 'Почта', 'Адрес', 'Город', 'Улица', 'Дом', 'Квартира',
-      'Паспорт', 'СНИЛС', 'ИНН', 'ОГРН', 'ОТЧЕСТВО', 'ФИО', 'ОРГАНИЗАЦИЯ',
+      'ООО', 'ЗАО', 'АО', 'ПАО', 'ОАО', 'ИП', 'Тел', 'Телефон', 'Email', 'Почта',
+      'Адрес', 'Город', 'Улица', 'Дом', 'Квартира', 'Паспорт', 'СНИЛС', 'ИНН', 'ОГРН',
       'Яндекс', 'Гугл', 'Майл', 'Рамблер', 'России', 'Российской'
     ]);
     let match;
@@ -284,15 +274,9 @@
       let word = t.word;
       const isSubword = word.startsWith('##');
       if (isSubword) word = word.slice(2);
-      
       let idx = text.indexOf(word, currentPos);
-      // Если не нашли сразу, ищем чуть шире (иногда токены могут идти не строго подряд из-за пробелов)
-      if (idx === -1) {
-         idx = text.indexOf(word, Math.max(0, currentPos - 5));
-      }
-      
+      if (idx === -1) idx = text.indexOf(word, Math.max(0, currentPos - 5));
       if (idx === -1) continue;
-
       located.push({
         ...t,
         start: idx,
@@ -315,31 +299,50 @@
     return e.entity_group === 'PER' && e.word.length === 1 && !e.word.match(/[А-ЯЁA-Z]\.?/);
   }
 
-  // Объединение смежных PERSON-токенов
-  function mergePersonTokens(entities, text) {
+  // ✅ ОБЪЕДИНЕНИЕ СУЩНОСТЕЙ ЛЮБОГО ТИПА (не только PER)
+  function mergeAdjacentEntities(entities, text) {
     const merged = [];
     for (const e of entities) {
       if (merged.length === 0) {
-        merged.push(e);
+        merged.push({ ...e });
         continue;
       }
-      const prev = merged[merged.length-1];
-      const bothPerson = (prev.entity_group === 'PER' && e.entity_group === 'PER');
-      // Разрешаем склейку, если между ними мало символов (пробелы) и нет запятых
-      if (bothPerson && e.start <= prev.end + 3) {
+      const prev = merged[merged.length - 1];
+      const sameType = prev.entity_group === e.entity_group;
+      
+      // Склеиваем, если: одинаковый тип + позиции рядом + между ними нет запятых/переносов
+      if (sameType && e.start <= prev.end + 3) {
         const between = text.slice(prev.end, e.start);
-        if (!between.includes(',') && !between.includes('\n')) {
+        if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
           prev.end = e.end;
           prev.word = text.slice(prev.start, e.end);
           prev.score = Math.min(prev.score, e.score);
         } else {
-          merged.push(e);
+          merged.push({ ...e });
         }
       } else {
-        merged.push(e);
+        merged.push({ ...e });
       }
     }
     return merged;
+  }
+
+  // Удаление дублей после чанкинга
+  function deduplicateEntities(entities) {
+    entities.sort((a, b) => a.start - b.start);
+    const unique = [];
+    for (const e of entities) {
+      if (unique.length === 0 || e.start >= unique[unique.length - 1].end) {
+        unique.push({ ...e });
+      } else {
+        const prev = unique[unique.length - 1];
+        // Оставляем более длинную или более уверенную сущность
+        if ((e.end - e.start) > (prev.end - prev.start) || e.score > prev.score) {
+          unique[unique.length - 1] = { ...e };
+        }
+      }
+    }
+    return unique;
   }
 
   // Нумерация сущностей
@@ -377,11 +380,39 @@
     });
   }
 
-  // Процесс обработки текста моделью
-  async function processText(text) {
-    // group_entities: true помогает модели самой склеивать B-I-O теги
-    const rawTokens = await nerPipeline(text, { group_entities: true });
-    return locateTokens(rawTokens, text);
+  // ✅ ПОБАТЧЕВАЯ ОБРАБОТКА ТЕКСТА С ПЕРЕКРЫТИЕМ
+  async function processTextWithChunks(text, threshold) {
+    const CHUNK_SIZE = 350; // символов (~250-300 токенов BERT)
+    const OVERLAP = 40;     // перекрытие, чтобы не резать слова на границах
+    const allRaw = [];
+    
+    for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
+      const chunk = text.slice(i, i + CHUNK_SIZE);
+      if (!chunk.trim()) continue;
+
+      // group_entities: true помогает модели склеивать B-I-O теги внутри чанка
+      const rawTokens = await nerPipeline(chunk, { group_entities: true });
+      const located = locateTokens(rawTokens, chunk);
+      
+      for (const t of located) {
+        if (t.score >= threshold) {
+          // Смещаем координаты обратно в полный текст
+          allRaw.push({
+            ...t,
+            start: t.start + i,
+            end: t.end + i
+          });
+        }
+      }
+      
+      // Обновляем прогресс обработки текста
+      const pct = Math.min(100, Math.round(((i + chunk.length) / text.length) * 100));
+      textProgressBar.style.width = `${pct}%`;
+      
+      // Даём браузеру обновить UI
+      await new Promise(r => setTimeout(r, 0));
+    }
+    return allRaw;
   }
 
   // Загрузка модели
@@ -389,8 +420,8 @@
     loadBtn.disabled = true;
     loadBtn.textContent = '⏳ Загрузка...';
     status.textContent = '⏳ Инициализация...';
-    progressBar.className = 'progress-bar';
-    progressBar.style.width = '10%';
+    modelProgressBar.className = 'progress-bar';
+    modelProgressBar.style.width = '10%';
 
     try {
       const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
@@ -399,18 +430,21 @@
           if (e.status === 'download' || e.status === 'progress') {
             if (e.total && e.loaded) {
               const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
-              progressBar.style.width = `${pct}%`;
-              status.textContent = `${e.file || 'Загрузка'}: ${pct}%`;
+              const mbLoaded = (e.loaded / 1024 / 1024).toFixed(1);
+              const mbTotal = (e.total / 1024 / 1024).toFixed(1);
+              modelProgressBar.style.width = `${pct}%`;
+              status.textContent = `${e.file || 'Загрузка'}: ${mbLoaded}/${mbTotal} МБ (${pct}%)`;
             }
           } else if (e.status === 'ready') {
-            progressBar.style.width = '100%';
+            modelProgressBar.className = 'progress-bar success';
+            modelProgressBar.style.width = '100%';
             status.textContent = '✅ Модель загружена!';
           }
         }
       });
       modelLoaded = true;
-      progressBar.className = 'progress-bar success';
-      progressBar.style.width = '100%';
+      modelProgressBar.className = 'progress-bar success';
+      modelProgressBar.style.width = '100%';
       status.textContent = '✅ Модель готова!';
       loadBtn.textContent = '✅ Загружено';
       loadBtn.style.background = '#10b981';
@@ -419,8 +453,8 @@
       renderTypeSettings();
     } catch (err) {
       console.error(err);
-      progressBar.className = 'progress-bar error';
-      progressBar.style.width = '100%';
+      modelProgressBar.className = 'progress-bar error';
+      modelProgressBar.style.width = '100%';
       status.textContent = `❌ Ошибка: ${err.message}`;
       loadBtn.disabled = false;
       loadBtn.textContent = '🔄 Загрузить модель';
@@ -435,22 +469,21 @@
 
     runBtn.disabled = true;
     status.textContent = '⏳ Анализ...';
-    progressBar.className = 'progress-bar';
-    progressBar.style.width = '20%';
+    modelProgressBar.className = 'progress-bar';
+    textProgressBar.style.width = '0%';
     debugPanel.classList.remove('show');
     lastDebug = '';
 
     try {
       const threshold = parseFloat(nerThreshold.value);
 
-      // 1. NER
-      const located = await processText(text);
-      lastDebug += `🔍 NER-токены (${located.length}):\n${JSON.stringify(located, null, 2)}\n\n`;
+      // 1. NER с чанкингом
+      const rawTokens = await processTextWithChunks(text, threshold);
+      lastDebug += `🔍 NER-токены сырые (${rawTokens.length}):\n${JSON.stringify(rawTokens.slice(0,10), null, 2)}...\n\n`;
 
-      let nerEntities = located
-        .filter(t => t.score >= threshold)
+      // 2. Маппинг типов + фильтрация мусора
+      let nerEntities = rawTokens
         .map(t => {
-          // Убираем префиксы B-, I- и маппим на наши группы
           const label = t.entity.split('-').slice(1).join('-');
           return {
             start: t.start,
@@ -462,46 +495,31 @@
         })
         .filter(e => !isSingleCharJunk(e));
 
-      const nerMerged = mergePersonTokens(nerEntities, text);
-      lastDebug += `🧩 NER объединённые (${nerMerged.length}):\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
+      // 3. ✅ Склейка смежных сущностей ЛЮБОГО типа
+      const nerMerged = mergeAdjacentEntities(nerEntities, text);
+      lastDebug += `🧩 NER после склейки (${nerMerged.length}):\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
 
-      // 2. Regex (Паспорта, Даты и др.)
+      // 4. Regex
       const regexEntities = findRegexEntities(text, 0);
-      
-      // 3. Резервные одиночные имена
       const singleNames = entityConfig.SINGLE_NAME.enabled ? findSingleNames(text) : [];
       lastDebug += `🔎 Regex (${regexEntities.length}), Резервные имена (${singleNames.length})\n`;
 
-      // 4. Объединение всех сущностей
+      // 5. Объединение всех источников
       let all = [...nerMerged, ...regexEntities, ...singleNames]
         .filter(e => entityConfig[e.entity_group]?.enabled);
 
-      // Сортировка по позиции
-      all.sort((a,b) => a.start - b.start);
-      
-      // Удаление пересечений (оставляем более уверенную или длинную)
-      const final = [];
-      for (const e of all) {
-        if (final.length === 0 || e.start >= final[final.length-1].end) {
-          final.push(e);
-        } else {
-          const prev = final[final.length-1];
-          if (e.score > prev.score || (e.score === prev.score && (e.end-e.start) > (prev.end-prev.start))) {
-            final[final.length-1] = e;
-          }
-        }
-      }
-
-      const { numbers } = buildEntityNumbering(final, text);
+      // 6. Удаление дублей после чанкинга
+      const final = deduplicateEntities(all);
       lastDebug += `✅ Итоговые сущности (${final.length}):\n`;
       final.forEach((e, i) => {
         const cfgLabel = entityConfig[e.entity_group]?.label || e.entity_group;
-        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${numbers[i]} (${e.score.toFixed(3)})\n`;
+        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${i+1} (${e.score.toFixed(3)})\n`;
       });
 
-      // Замена в тексте (с конца, чтобы индексы не съехали)
+      // 7. Нумерация и замена
+      const { numbers } = buildEntityNumbering(final, text);
       let result = text;
-      for (let i = final.length-1; i >= 0; i--) {
+      for (let i = final.length - 1; i >= 0; i--) {
         const e = final[i];
         const label = entityConfig[e.entity_group]?.label || e.entity_group;
         const masked = `[${label}-${numbers[i]}]`;
@@ -509,18 +527,16 @@
       }
 
       textarea.value = result;
-      progressBar.className = 'progress-bar success';
-      progressBar.style.width = '100%';
+      textProgressBar.className = 'progress-bar success';
+      textProgressBar.style.width = '100%';
       status.textContent = `✅ Готово! Заменено ${final.length} сущностей.`;
-      
-      // Показываем отладку, если сущностей мало или для проверки
       debugPanel.textContent = lastDebug;
       debugPanel.classList.add('show');
 
     } catch (err) {
       console.error(err);
-      progressBar.className = 'progress-bar error';
-      progressBar.style.width = '100%';
+      textProgressBar.className = 'progress-bar error';
+      textProgressBar.style.width = '100%';
       status.textContent = '❌ Ошибка при анализе.';
       lastDebug += `\n❌ Ошибка: ${err.message}`;
     } finally {
