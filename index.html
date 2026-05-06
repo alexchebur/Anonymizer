@@ -535,23 +535,23 @@ function buildEntityNumbering(entities) {
       // 5. Объединение всех источников
       let all = [...nerMerged, ...regexEntities, ...singleNames]
         .filter(e => entityConfig[e.entity_group]?.enabled);
-      // ... после сбора all = [...nerMerged, ...regexEntities, ...singleNames] ...
+
+      // Очистка, склейка и дедупликация
       let cleaned = cleanEntities(all, text);
       let merged = mergeAdjacentEntities(cleaned, text);
       let final = deduplicateEntities(merged);
 
+      // Нумерация
       const { numbers } = buildEntityNumbering(final);
-
-      // 6. Удаление дублей после чанкинга
-      const final = deduplicateEntities(all);
+      
+      // Отладочный вывод
       lastDebug += `✅ Итоговые сущности (${final.length}):\n`;
       final.forEach((e, i) => {
         const cfgLabel = entityConfig[e.entity_group]?.label || e.entity_group;
-        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${i+1} (${e.score.toFixed(3)})\n`;
+        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${numbers[i]} (${e.score.toFixed(3)})\n`;
       });
 
-      // 7. Нумерация и замена
-      const { numbers } = buildEntityNumbering(final, text);
+      // 6. Замена в тексте (с конца, чтобы индексы не съехали)
       let result = text;
       for (let i = final.length - 1; i >= 0; i--) {
         const e = final[i];
