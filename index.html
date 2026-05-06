@@ -3,305 +3,546 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🔒 Анонимизатор NER (Улучшенный)</title>
+  <title>Анонимизатор (Улучшенные Regex)</title>
   <style>
-    :root { --bg: #f5f7fa; --card: #ffffff; --primary: #2563eb; --text: #1f2937; --code: #e5e7eb; --debug-bg: #0f172a; --debug-text: #10b981; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-    .container { max-width: 1000px; margin: 0 auto; }
-    .card { background: var(--card); border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    h1, h2, h3 { margin-top: 0; }
-    textarea { width: 100%; height: 180px; font-family: monospace; font-size: 14px; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; resize: vertical; box-sizing: border-box; }
-    .btn { background: var(--primary); color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 500; cursor: pointer; transition: 0.2s; }
-    .btn:disabled { background: #9ca3af; cursor: not-allowed; }
-    .btn:hover:not(:disabled) { background: #1d4ed8; }
-    .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px 0; }
-    .progress-wrap { margin: 10px 0; }
-    .progress-wrap label { display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500; }
-    progress { width: 100%; height: 8px; border-radius: 4px; }
-    .result-box { background: #f0f9ff; border: 1px solid #bae6fd; padding: 16px; border-radius: 8px; font-family: monospace; white-space: pre-wrap; min-height: 120px; max-height: 400px; overflow-y: auto; }
-    .debug-box { background: var(--debug-bg); color: var(--debug-text); padding: 16px; border-radius: 8px; font-family: monospace; font-size: 13px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
-    .info { font-size: 13px; color: #6b7280; margin-top: 8px; }
-    code { background: var(--code); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    :root {
+      --primary: #2563eb; --success: #10b981; --error: #ef4444;
+      --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0;
+      --text: #0f172a; --muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 960px; margin: 2rem auto; padding: 0 1rem;
+      background: var(--bg); color: var(--text);
+    }
+    .card {
+      background: var(--card); padding: 1.5rem;
+      border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 1.5rem;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+    textarea {
+      width: 100%; height: 220px; margin: 1rem 0; padding: 0.8rem;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 15px; resize: vertical; background: #f8fafc;
+      font-family: monospace;
+    }
+    textarea:disabled { background: #e2e8f0; cursor: not-allowed; }
+    .btn-group { display: flex; gap: 0.8rem; flex-wrap: wrap; margin: 0.5rem 0; }
+    button {
+      padding: 0.6rem 1.2rem; font-size: 14px; font-weight: 500;
+      cursor: pointer; border: none; border-radius: 6px;
+      transition: opacity 0.2s;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #loadBtn { background: var(--primary); color: white; }
+    #runBtn { background: var(--success); color: white; }
+    #debugToggle { background: #64748b; color: white; }
+    .progress {
+      width: 100%; height: 4px; background: var(--border);
+      border-radius: 2px; overflow: hidden; margin: 0.5rem 0;
+    }
+    .progress-bar {
+      height: 100%; width: 0%; background: var(--primary);
+      transition: width 0.3s;
+    }
+    .progress-bar.success { background: var(--success); }
+    .progress-bar.error { background: var(--error); }
+    .status { margin: 0.5rem 0; font-weight: 500; min-height: 1.2rem; }
+    .hint {
+      font-size: 0.85rem; color: var(--muted);
+      margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    }
+    .warning {
+      background: #fef3c7; border-left: 4px solid #f59e0b;
+      padding: 0.8rem; border-radius: 0 6px 6px 0;
+      margin-bottom: 1rem; font-size: 0.9rem; display: none;
+    }
+    .debug {
+      font-size: 0.8rem; color: #334155;
+      margin-top: 0.5rem; font-family: monospace;
+      white-space: pre-wrap; max-height: 250px; overflow-y: auto;
+      background: #f1f5f9; padding: 0.8rem; border-radius: 6px;
+      display: none;
+    }
+    .debug.show { display: block; }
+    .settings {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.5rem 1rem; margin: 1rem 0;
+    }
+    .setting label {
+      display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;
+    }
+    .slider-container {
+      display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;
+    }
+    input[type="range"] { width: 150px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <h1>🔒 Анонимизатор документов</h1>
-      <p class="info">Модель: <code>onnx-community/bert-base-NER-Russian-ONNX</code> | Всё работает локально в браузере</p>
-      <p class="info">⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code></p>
+<div class="card">
+  <h1>🔒 Анонимизатор (Улучшенные Regex)</h1>
 
-      <div class="progress-wrap">
-        <label>Загрузка модели:</label>
-        <progress id="modelProgress" max="100" value="0"></progress>
-      </div>
-      <div class="progress-wrap">
-        <label>Обработка текста:</label>
-        <progress id="textProgress" max="100" value="0"></progress>
-      </div>
-
-      <div class="controls">
-        <button id="loadModelBtn" class="btn">📥 Загрузить модель</button>
-        <button id="anonymizeBtn" class="btn" disabled>🔒 Анонимизировать</button>
-        <label style="flex:1; min-width: 200px;">
-          Порог уверенности NER: <strong id="thresholdVal">0.70</strong>
-          <input type="range" id="threshold" min="0.1" max="0.95" step="0.05" value="0.70" style="width:100%">
-        </label>
-      </div>
-
-      <label>📝 Исходный текст:</label>
-      <textarea id="inputText">Доверенность 
-Город Екатеринбург Свердловской области
-Тридцатое апреля две тысячи двадцать шестого года
-
-Публичное акционерное общество «Т Плюс», ИНН 6315376946, ОГРН 1056315070350, свидетельство о государственной регистрации юридического лица: серия 63 № 001658830, дата государственной регистрации: 01 августа 2005 года, наименование регистрирующего органа: Инспекция Федеральной налоговой службы по Ленинскому району г. Самары, КПП 502401001, адрес юридического лица: 143421, Московская область, г.о. Красногорск, тер. автодорога Балтия, км 26-й, д. 5, стр. 3, офис 506, действующее на основании Устава, зарегистрированного Межрайонной инспекцией Федеральной налоговой службы № 23 по Московской области 03 июля 2025 года, номер регистрации: 2255005662525,
-
-именуемое далее «Общество»,
-
-в лице Директора филиала Общества «Свердловский» Родина Павла Валерьевича,
-паспорт серия: 6520 № 038401, выдан ГУ МВД России по Свердловской области 29 января 2020 года, код подразделения: 660-004, действующего на основании доверенности от 19 мая 2025 года, зарегистрированной нотариусом Новиковым Андреем Николаевичем за номером в реестре 77/406-н/77-2025-1-481, сроком действия по 31 октября 2027 года включительно, 
-
-уполномочивает:
-
-Чикарева Константина Алексеевича, паспорт серия 65 09 №690054, выдан ОУФМС России по Свердловской обл. в Железнодорожном районе города Екатеринбурга,  
-
-именуемого далее «Поверенный», осуществлять от имени и в интересах Общества, в рамках хозяйственной деятельности филиала Общества «Свердловский», действия, направленные на получение векселей, в том числе на подписание от имени Общества актов приема-передачи векселей.
-
-Доверенность выдана без права передоверия полномочий по тридцатое мая две тысячи двадцать шестого года включительно.
-
-
-Подпись Чикарева Константина Алексеевича _____________________удостоверяю
-
-
-
-Директор Свердловского Филиала ПАО «Т Плюс» 
-Родин Павел Валерьевич________________________________________________
-</textarea>
-
-      <label>✅ Результат:</label>
-      <div id="outputResult" class="result-box">Нажмите «Анонимизировать»</div>
-    </div>
-
-    <div class="card">
-      <h3>🐛 Отладка</h3>
-      <div id="debugOutput" class="debug-box">Готово к работе. Нажмите «Загрузить модель».</div>
-    </div>
+  <div id="fileWarning" class="warning">
+    ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
   </div>
 
-  <script type="module">
-    // ✅ ИСПРАВЛЕННЫЙ ИМПОРТ (версия 3.4.0, как в вашем рабочем коде)
-    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
+  <div class="btn-group">
+    <button id="loadBtn">🔄 Загрузить модель</button>
+    <button id="runBtn" disabled>🔒 Анонимизировать</button>
+    <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
+  </div>
+
+  <div id="status" class="status">Нажмите «Загрузить модель»</div>
+  <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
+
+  <div class="settings" id="typeSettings"></div>
+
+  <div class="slider-container">
+    <label for="nerThreshold">Порог уверенности NER:</label>
+    <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
+    <span id="thresholdValue">0.70</span>
+  </div>
+
+  <textarea id="inputText" disabled placeholder="Введите текст...">Доверенность 
+Город Екатеринбург Свердловской области
+...
+Паспорт серия 65 09 №690054, выдан ОУФМС России 01.01.2020...</textarea>
+
+  <div class="debug" id="debugPanel"></div>
+
+  <div class="hint">
+    <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
+    <strong>Regex‑типы:</strong> организации, email, телефон, паспорт (улучшенный), даты, СНИЛС, ИНН, ОГРН<br>
+    <strong>Резервный слой:</strong> одиночные слова с заглавной буквы можно включить как «ФИО?»<br>
+    <strong>Приватность:</strong> всё локально
+  </div>
+</div>
+
+<script type="module">
+  import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
+
+  if (window.location.protocol === 'file:') {
+    document.getElementById('fileWarning').style.display = 'block';
+  }
+
+  env.allowLocalModels = false;
+  env.useBrowserCache = true;
+
+  const loadBtn = document.getElementById('loadBtn');
+  const runBtn = document.getElementById('runBtn');
+  const debugToggle = document.getElementById('debugToggle');
+  const textarea = document.getElementById('inputText');
+  const status = document.getElementById('status');
+  const progressBar = document.getElementById('progressBar');
+  const debugPanel = document.getElementById('debugPanel');
+  const nerThreshold = document.getElementById('nerThreshold');
+  const thresholdValue = document.getElementById('thresholdValue');
+  const typeSettings = document.getElementById('typeSettings');
+
+  let nerPipeline;
+  let modelLoaded = false;
+  let lastDebug = '';
+
+  // Конфигурация сущностей
+  const entityConfig = {
+    PER:        { label: 'ФИО',             enabled: true },
+    SINGLE_NAME:{ label: 'ФИО?',            enabled: false }, // резервный
+    ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
+    TITLE:      { label: 'НАЗВАНИЕ',        enabled: false },
+    LOC:        { label: 'МЕСТО',           enabled: true },
+    GPE:        { label: 'ЛОКАЦИЯ',         enabled: true },
+    MISC:       { label: 'ДРУГОЕ',          enabled: false },
+    PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
+    DATE_ISSUE: { label: 'ДАТА',            enabled: true }, // Новый тип для дат
+    SNILS:      { label: 'СНИЛС',           enabled: true },
+    INN:        { label: 'ИНН',             enabled: true },
+    OGRN:       { label: 'ОГРН',            enabled: true },
+    PHONE:      { label: 'ТЕЛЕФОН',         enabled: true },
+    EMAIL:      { label: 'EMAIL',           enabled: true }
+  };
+
+  // --- Валидация (оставлена для строгих числовых кодов) ---
+  function isValidINN(inn) {
+    if (!/^\d{12}$/.test(inn)) return false;
+    const d = inn.split('').map(Number);
+    const c1 = [7,2,4,10,3,5,9,4,6,8];
+    const c2 = [3,7,2,4,10,3,5,9,4,6,8];
+    let s1=0, s2=0;
+    for (let i=0; i<10; i++) s1 += c1[i]*d[i];
+    for (let i=0; i<11; i++) s2 += c2[i]*d[i];
+    return d[10]===(s1%11)%10 && d[11]===(s2%11)%10;
+  }
+  function isValidSNILS(snils) {
+    const digits = snils.replace(/[\s-]/g, '');
+    if (!/^\d{11}$/.test(digits)) return false;
+    const nums = digits.split('').map(Number);
+    let sum = 0;
+    for (let i=0; i<9; i++) sum += nums[i]*(9-i);
+    let control = sum % 101;
+    if (control === 100 || control === 101) control = 0;
+    return control === parseInt(digits.slice(9,11), 10);
+  }
+  function isValidOGRN(ogrn) {
+    const clean = ogrn.replace(/\D/g, '');
+    if (clean.length !== 13 && clean.length !== 15) return false;
+    const num = BigInt(clean.slice(0, -1));
+    const check = Number(clean.slice(-1));
+    const mod = clean.length === 13 ? 11n : 13n;
+    const remainder = Number(num % mod);
+    return check === (remainder === 10 ? 0 : remainder);
+  }
+
+  // --- Regex-сущности (ОПТИМИЗИРОВАНО) ---
+  function findRegexEntities(text, baseOffset = 0) {
+    const results = [];
     
-    env.allowLocalModels = false;
-    env.useBrowserCache = true;
+    // 1. ПАСПОРТ (Улучшенный паттерн)
+    // Ловит: "паспорт серия 65 09 №690054", "серия 12-34 567890", "12 34 567890"
+    const passportRegex = /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?\d{2}\s*[\s\-]?\s*\d{2}\s*(?:№|номер|N)?\s*\d{6}\b/gi;
+    
+    // 2. ДАТЫ (Новый паттерн)
+    // Ловит: 01.01.2020, 01/01/20, 01-01-2020
+    const dateRegex = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g;
 
-    let classifier = null;
-    const modelProgress = document.getElementById('modelProgress');
-    const textProgress = document.getElementById('textProgress');
-    const thresholdInput = document.getElementById('threshold');
-    const thresholdVal = document.getElementById('thresholdVal');
-    const debugBox = document.getElementById('debugOutput');
-
-    thresholdInput.addEventListener('input', () => thresholdVal.textContent = thresholdInput.value);
-
-    function log(msg, type = 'info') {
-      const time = new Date().toLocaleTimeString();
-      const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
-      debugBox.textContent += `\n[${time}] ${icon} ${msg}`;
-      debugBox.scrollTop = debugBox.scrollHeight;
-    }
-
-    // ---------------------------------------------------------
-    // 1. ЗАГРУЗКА МОДЕЛИ
-    // ---------------------------------------------------------
-    document.getElementById('loadModelBtn').onclick = async () => {
-      try {
-        document.getElementById('loadModelBtn').disabled = true;
-        log('Начало загрузки модели (~180 МБ)...');
-        modelProgress.value = 5;
-
-        classifier = await pipeline('token-classification', 'onnx-community/bert-base-NER-Russian-ONNX', {
-          progress_callback: (progress) => {
-            if (progress.progress !== undefined) {
-              modelProgress.value = Math.min(100, Math.round(progress.progress * 100));
-            }
-          }
-        });
-
-        modelProgress.value = 100;
-        document.getElementById('anonymizeBtn').disabled = false;
-        log('Модель успешно загружена', 'success');
-      } catch (err) {
-        log(`Ошибка загрузки: ${err.message}`, 'error');
-        document.getElementById('loadModelBtn').disabled = false;
-      }
-    };
-
-    // ---------------------------------------------------------
-    // 2. РЕГУЛЯРНЫЕ ВЫРАЖЕНИЯ (ОПТИМИЗИРОВАНЫ)
-    // ---------------------------------------------------------
-    const REGEX_PATTERNS = [
-      // ПАСПОРТ: ловит "паспорт серия 65 09 №690054", "серия 12-34 567890" и т.д.
-      { type: 'ПАСПОРТ', re: /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?\d{2}\s*[\s\-]?\s*\d{2}\s*(?:№|номер|N)?\s*\d{6}\b/gi },
-      // ПАСПОРТ (короткий формат): 12 34 567890 или 12-34 567890
-      { type: 'ПАСПОРТ', re: /\b\d{2}\s*[\s\-]\s*\d{2}\s+\d{6}\b/g },
-      // ТЕЛЕФОН
-      { type: 'ТЕЛЕФОН', re: /(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g },
-      // EMAIL
-      { type: 'EMAIL', re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
-      // ИНН
-      { type: 'ИНН', re: /(?:ИНН|инн)\s*\d{10,12}/gi },
-      // СНИЛС
-      { type: 'СНИЛС', re: /(?:СНИЛС|снилс)\s*\d{3}[\s\-]?\d{3}[\s\-]?\d{3}[\s\-]?\d{2}/gi },
-      // ОГРН
-      { type: 'ОГРН', re: /(?:ОГРН|огрн)\s*\d{13,15}/gi },
-      // ДАТЫ
-      { type: 'ДАТА', re: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g }
+    // 3. Остальные стандартные паттерны
+    const patterns = [
+      { regex: passportRegex, type: 'PASSPORT', validate: null }, // Паспорт валидируем по структуре regex
+      { regex: dateRegex, type: 'DATE_ISSUE', validate: null },
+      
+      { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
+      { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
+      { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', validate: isValidOGRN },
+      
+      // Телефоны (более жадный захват)
+      { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', validate: null },
+      { regex: /\b[87]\d{10}\b/g, type: 'PHONE', validate: null },
+      
+      // Email
+      { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null },
+      
+      // Организации и названия
+      { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/g, type: 'ORG', validate: null },
+      { regex: /«[А-ЯЁA-Z][^»]{0,50}»/g, type: 'TITLE', validate: null }
     ];
 
-    function extractRegex(text) {
-      const matches = [];
-      for (const pat of REGEX_PATTERNS) {
-        let m;
-        while ((m = pat.re.exec(text)) !== null) {
-          matches.push({ start: m.index, end: m.index + m[0].length, word: m[0], entityGroup: pat.type, score: 1.0 });
-        }
+    for (const { regex, type, validate } of patterns) {
+      let match;
+      // Сброс lastIndex для глобальных регулярок важен при повторных вызовах
+      regex.lastIndex = 0; 
+      while ((match = regex.exec(text)) !== null) {
+        const word = match[0];
+        
+        // Если есть функция валидации (для ИНН/СНИЛС/ОГРН), проверяем
+        if (validate && !validate(word)) continue;
+
+        results.push({
+          start: match.index + baseOffset,
+          end: match.index + word.length + baseOffset,
+          word,
+          entity_group: type,
+          score: 1.0
+        });
       }
-      return matches;
     }
+    return results;
+  }
 
-    // ---------------------------------------------------------
-    // 3. ПОБЛОЧНАЯ ОБРАБОТКА + СКЛЕЙКА ТОКЕНОВ
-    // ---------------------------------------------------------
-    async function processChunks(text, threshold) {
-      const CHUNK_SIZE = 350; 
-      const OVERLAP = 40;     
-      const allRaw = [];
-      
-      for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
-        const chunk = text.slice(i, i + CHUNK_SIZE);
-        if (!chunk.trim()) continue;
-
-        const results = await classifier(chunk);
-        
-        for (const ent of results) {
-          if (ent.score >= threshold) {
-            ent.start += i;
-            ent.end += i;
-            allRaw.push(ent);
-          }
-        }
-        
-        const pct = Math.min(100, Math.round(((i + chunk.length) / text.length) * 100));
-        textProgress.value = pct;
-        await new Promise(r => setTimeout(r, 0));
-      }
-      return allRaw;
-    }
-
-    const ENTITY_MAP = {
-      'FIRST_NAME': 'ФИО', 'LAST_NAME': 'ФИО', 'MIDDLE_NAME': 'ФИО',
-      'CITY': 'МЕСТО', 'REGION': 'МЕСТО', 'COUNTRY': 'МЕСТО', 'DISTRICT': 'МЕСТО',
-      'STREET': 'АДРЕС', 'HOUSE': 'АДРЕС', 'ORG': 'ОРГ', 'COMPANY': 'ОРГ'
-    };
-
-    function mergeTokens(rawTokens, text) {
-      if (!rawTokens.length) return [];
-      rawTokens.sort((a, b) => a.start - b.start);
-      const merged = [];
-      let curr = { start: rawTokens[0].start, end: rawTokens[0].end, entity: rawTokens[0].entity, score: rawTokens[0].score };
-
-      for (let i = 1; i < rawTokens.length; i++) {
-        const t = rawTokens[i];
-        const cleanT = t.entity.replace(/^[BIUL]-/, '');
-        const cleanC = curr.entity.replace(/^[BIUL]-/, '');
-        
-        if (t.start === curr.end && cleanT === cleanC) {
-          curr.end = t.end;
-          curr.score = Math.min(curr.score, t.score);
-        } else {
-          merged.push(curr);
-          curr = { start: t.start, end: t.end, entity: t.entity, score: t.score };
-        }
-      }
-      merged.push(curr);
-
-      return merged.map(e => {
-        const baseType = e.entity.replace(/^[BIUL]-/, '');
-        return {
-          start: e.start,
-          end: e.end,
-          word: text.substring(e.start, e.end),
-          entityGroup: ENTITY_MAP[baseType] || baseType,
-          score: Math.round(e.score * 1000) / 1000
-        };
+  // Резервный поиск одиночных слов с заглавной буквы
+  function findSingleNames(text) {
+    const words = [];
+    const regex = /\b([А-ЯЁ][а-яё]{1,30})\b/g;
+    const stopWords = new Set([
+      'ООО', 'ЗАО', 'АО', 'ПАО', 'ОАО', 'ИП',
+      'Тел', 'Телефон', 'Email', 'Почта', 'Адрес', 'Город', 'Улица', 'Дом', 'Квартира',
+      'Паспорт', 'СНИЛС', 'ИНН', 'ОГРН', 'ОТЧЕСТВО', 'ФИО', 'ОРГАНИЗАЦИЯ',
+      'Яндекс', 'Гугл', 'Майл', 'Рамблер', 'России', 'Российской'
+    ]);
+    let match;
+    regex.lastIndex = 0;
+    while ((match = regex.exec(text)) !== null) {
+      const word = match[0];
+      if (stopWords.has(word)) continue;
+      words.push({
+        start: match.index,
+        end: match.index + word.length,
+        word,
+        entity_group: 'SINGLE_NAME',
+        score: 0.5
       });
     }
+    return words;
+  }
 
-    // ---------------------------------------------------------
-    // 4. ФИНАЛЬНАЯ АНОНИМИЗАЦИЯ
-    // ---------------------------------------------------------
-    function anonymize(text, allEntities) {
-      allEntities.sort((a, b) => a.start - b.start);
-      const unique = [];
-      for (const e of allEntities) {
-        const overlap = unique.find(u => e.start < u.end && e.end > u.start);
-        if (!overlap) {
-          unique.push(e);
-        } else if ((e.end - e.start) > (overlap.end - overlap.start) || e.score > overlap.score) {
-          Object.assign(overlap, e);
+  // Поиск позиций токенов в тексте
+  function locateTokens(tokens, text) {
+    const located = [];
+    let currentPos = 0;
+    for (const t of tokens) {
+      let word = t.word;
+      const isSubword = word.startsWith('##');
+      if (isSubword) word = word.slice(2);
+      
+      let idx = text.indexOf(word, currentPos);
+      // Если не нашли сразу, ищем чуть шире (иногда токены могут идти не строго подряд из-за пробелов)
+      if (idx === -1) {
+         idx = text.indexOf(word, Math.max(0, currentPos - 5));
+      }
+      
+      if (idx === -1) continue;
+
+      located.push({
+        ...t,
+        start: idx,
+        end: idx + word.length,
+        word: text.slice(idx, idx + word.length)
+      });
+      currentPos = idx + word.length;
+    }
+    return located;
+  }
+
+  const bioToGroup = {
+    LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
+    ORG: 'ORG', ORGANIZATION: 'ORG',
+    LOC: 'LOC', GPE: 'GPE', CITY: 'LOC', STREET: 'LOC', HOUSE: 'LOC', REGION: 'LOC',
+    MISC: 'MISC'
+  };
+
+  function isSingleCharJunk(e) {
+    return e.entity_group === 'PER' && e.word.length === 1 && !e.word.match(/[А-ЯЁA-Z]\.?/);
+  }
+
+  // Объединение смежных PERSON-токенов
+  function mergePersonTokens(entities, text) {
+    const merged = [];
+    for (const e of entities) {
+      if (merged.length === 0) {
+        merged.push(e);
+        continue;
+      }
+      const prev = merged[merged.length-1];
+      const bothPerson = (prev.entity_group === 'PER' && e.entity_group === 'PER');
+      // Разрешаем склейку, если между ними мало символов (пробелы) и нет запятых
+      if (bothPerson && e.start <= prev.end + 3) {
+        const between = text.slice(prev.end, e.start);
+        if (!between.includes(',') && !between.includes('\n')) {
+          prev.end = e.end;
+          prev.word = text.slice(prev.start, e.end);
+          prev.score = Math.min(prev.score, e.score);
+        } else {
+          merged.push(e);
+        }
+      } else {
+        merged.push(e);
+      }
+    }
+    return merged;
+  }
+
+  // Нумерация сущностей
+  function buildEntityNumbering(entities, text) {
+    const typeMap = {};
+    const numbers = [];
+    for (const e of entities) {
+      const type = e.entity_group;
+      if (!typeMap[type]) typeMap[type] = {};
+      const orig = text.slice(e.start, e.end);
+      if (!typeMap[type][orig]) {
+        typeMap[type][orig] = Object.keys(typeMap[type]).length + 1;
+      }
+      numbers.push(typeMap[type][orig]);
+    }
+    return { typeMap, numbers };
+  }
+
+  function renderTypeSettings() {
+    let html = '';
+    for (const [type, cfg] of Object.entries(entityConfig)) {
+      html += `
+      <div class="setting">
+        <label>
+          <input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}>
+          ${cfg.label} (${type})
+        </label>
+      </div>`;
+    }
+    typeSettings.innerHTML = html;
+    document.querySelectorAll('.type-check').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        entityConfig[e.target.dataset.type].enabled = e.target.checked;
+      });
+    });
+  }
+
+  // Процесс обработки текста моделью
+  async function processText(text) {
+    // group_entities: true помогает модели самой склеивать B-I-O теги
+    const rawTokens = await nerPipeline(text, { group_entities: true });
+    return locateTokens(rawTokens, text);
+  }
+
+  // Загрузка модели
+  loadBtn.addEventListener('click', async () => {
+    loadBtn.disabled = true;
+    loadBtn.textContent = '⏳ Загрузка...';
+    status.textContent = '⏳ Инициализация...';
+    progressBar.className = 'progress-bar';
+    progressBar.style.width = '10%';
+
+    try {
+      const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
+      nerPipeline = await pipeline('ner', MODEL_ID, {
+        progress_callback: (e) => {
+          if (e.status === 'download' || e.status === 'progress') {
+            if (e.total && e.loaded) {
+              const pct = Math.min(95, Math.round((e.loaded / e.total) * 100));
+              progressBar.style.width = `${pct}%`;
+              status.textContent = `${e.file || 'Загрузка'}: ${pct}%`;
+            }
+          } else if (e.status === 'ready') {
+            progressBar.style.width = '100%';
+            status.textContent = '✅ Модель загружена!';
+          }
+        }
+      });
+      modelLoaded = true;
+      progressBar.className = 'progress-bar success';
+      progressBar.style.width = '100%';
+      status.textContent = '✅ Модель готова!';
+      loadBtn.textContent = '✅ Загружено';
+      loadBtn.style.background = '#10b981';
+      textarea.disabled = false;
+      runBtn.disabled = false;
+      renderTypeSettings();
+    } catch (err) {
+      console.error(err);
+      progressBar.className = 'progress-bar error';
+      progressBar.style.width = '100%';
+      status.textContent = `❌ Ошибка: ${err.message}`;
+      loadBtn.disabled = false;
+      loadBtn.textContent = '🔄 Загрузить модель';
+    }
+  });
+
+  // Анонимизация
+  runBtn.addEventListener('click', async () => {
+    const text = textarea.value;
+    if (!text.trim()) { status.textContent = '⚠️ Введите текст'; return; }
+    if (!modelLoaded) { status.textContent = '⚠️ Сначала загрузите модель'; return; }
+
+    runBtn.disabled = true;
+    status.textContent = '⏳ Анализ...';
+    progressBar.className = 'progress-bar';
+    progressBar.style.width = '20%';
+    debugPanel.classList.remove('show');
+    lastDebug = '';
+
+    try {
+      const threshold = parseFloat(nerThreshold.value);
+
+      // 1. NER
+      const located = await processText(text);
+      lastDebug += `🔍 NER-токены (${located.length}):\n${JSON.stringify(located, null, 2)}\n\n`;
+
+      let nerEntities = located
+        .filter(t => t.score >= threshold)
+        .map(t => {
+          // Убираем префиксы B-, I- и маппим на наши группы
+          const label = t.entity.split('-').slice(1).join('-');
+          return {
+            start: t.start,
+            end: t.end,
+            word: text.slice(t.start, t.end),
+            entity_group: bioToGroup[label] || label || 'MISC',
+            score: t.score
+          };
+        })
+        .filter(e => !isSingleCharJunk(e));
+
+      const nerMerged = mergePersonTokens(nerEntities, text);
+      lastDebug += `🧩 NER объединённые (${nerMerged.length}):\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
+
+      // 2. Regex (Паспорта, Даты и др.)
+      const regexEntities = findRegexEntities(text, 0);
+      
+      // 3. Резервные одиночные имена
+      const singleNames = entityConfig.SINGLE_NAME.enabled ? findSingleNames(text) : [];
+      lastDebug += `🔎 Regex (${regexEntities.length}), Резервные имена (${singleNames.length})\n`;
+
+      // 4. Объединение всех сущностей
+      let all = [...nerMerged, ...regexEntities, ...singleNames]
+        .filter(e => entityConfig[e.entity_group]?.enabled);
+
+      // Сортировка по позиции
+      all.sort((a,b) => a.start - b.start);
+      
+      // Удаление пересечений (оставляем более уверенную или длинную)
+      const final = [];
+      for (const e of all) {
+        if (final.length === 0 || e.start >= final[final.length-1].end) {
+          final.push(e);
+        } else {
+          const prev = final[final.length-1];
+          if (e.score > prev.score || (e.score === prev.score && (e.end-e.start) > (prev.end-prev.start))) {
+            final[final.length-1] = e;
+          }
         }
       }
 
-      let result = '';
-      let lastIdx = 0;
-      const counters = {};
+      const { numbers } = buildEntityNumbering(final, text);
+      lastDebug += `✅ Итоговые сущности (${final.length}):\n`;
+      final.forEach((e, i) => {
+        const cfgLabel = entityConfig[e.entity_group]?.label || e.entity_group;
+        lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${numbers[i]} (${e.score.toFixed(3)})\n`;
+      });
 
-      for (const e of unique) {
-        result += text.substring(lastIdx, e.start);
-        counters[e.entityGroup] = (counters[e.entityGroup] || 0) + 1;
-        result += `[${e.entityGroup}-${counters[e.entityGroup]}]`;
-        lastIdx = e.end;
+      // Замена в тексте (с конца, чтобы индексы не съехали)
+      let result = text;
+      for (let i = final.length-1; i >= 0; i--) {
+        const e = final[i];
+        const label = entityConfig[e.entity_group]?.label || e.entity_group;
+        const masked = `[${label}-${numbers[i]}]`;
+        result = result.slice(0, e.start) + masked + result.slice(e.end);
       }
-      result += text.substring(lastIdx);
-      return result;
+
+      textarea.value = result;
+      progressBar.className = 'progress-bar success';
+      progressBar.style.width = '100%';
+      status.textContent = `✅ Готово! Заменено ${final.length} сущностей.`;
+      
+      // Показываем отладку, если сущностей мало или для проверки
+      debugPanel.textContent = lastDebug;
+      debugPanel.classList.add('show');
+
+    } catch (err) {
+      console.error(err);
+      progressBar.className = 'progress-bar error';
+      progressBar.style.width = '100%';
+      status.textContent = '❌ Ошибка при анализе.';
+      lastDebug += `\n❌ Ошибка: ${err.message}`;
+    } finally {
+      runBtn.disabled = false;
     }
+  });
 
-    // ---------------------------------------------------------
-    // 5. ЗАПУСК
-    // ---------------------------------------------------------
-    document.getElementById('anonymizeBtn').onclick = async () => {
-      const text = document.getElementById('inputText').value;
-      if (!text.trim()) return log('⚠️ Введите текст для обработки');
+  nerThreshold.addEventListener('input', () => {
+    thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
+  });
+  debugToggle.addEventListener('click', () => {
+    if (lastDebug) {
+      debugPanel.textContent = lastDebug;
+      debugPanel.classList.toggle('show');
+    } else {
+      debugPanel.textContent = 'Обработайте текст, чтобы увидеть отладку';
+      debugPanel.classList.add('show');
+    }
+  });
 
-      try {
-        debugBox.textContent = '⏳ Запуск конвейера...';
-        document.getElementById('anonymizeBtn').disabled = true;
-        textProgress.value = 0;
-
-        const threshold = parseFloat(thresholdInput.value);
-        
-        log(`🔍 Запуск NER (порог ${threshold})...`);
-        const rawTokens = await processChunks(text, threshold);
-        const mergedNer = mergeTokens(rawTokens, text);
-        log(`🧩 NER найдено сырых: ${rawTokens.length}, после склейки: ${mergedNer.length}`);
-
-        const regexEnts = extractRegex(text);
-        log(`📝 Regex найдено: ${regexEnts.length}`);
-
-        const combined = [...mergedNer, ...regexEnts];
-        const finalText = anonymize(text, combined);
-
-        document.getElementById('outputResult').textContent = finalText;
-        textProgress.value = 100;
-        log('✅ Анонимизация завершена', 'success');
-      } catch (err) {
-        log(`❌ Критическая ошибка: ${err.message}`, 'error');
-        console.error(err);
-      } finally {
-        document.getElementById('anonymizeBtn').disabled = false;
-      }
-    };
-  </script>
+  renderTypeSettings();
+  thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
+</script>
 </body>
 </html>
