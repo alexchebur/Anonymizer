@@ -206,24 +206,22 @@
   // --- Regex-сущности (ОПТИМИЗИРОВАНО) ---
   function findRegexEntities(text, baseOffset = 0) {
     const results = [];
-    
-    const passportRegex = /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?\d{2}\s*[\s\-]?\s*\d{2}\s*(?:№|номер|N)?\s*\d{6}\b/gi;
-    const dateRegex = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g;
-
+  
+    // 🔍 Паттерны в порядке приоритета (специфичные → общие)
     const patterns = [
-      // 🛂 ПАСПОРТ (ловит 65 23 и 6523)
-      { regex: /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?(?:\d{2}[\s-]?\d{2}|\d{4})\s*(?:№|номер|N\.?)?\s*\d{6}\b/giu, type: 'PASSPORT', validate: null },
-      
+      // 🛂 ПАСПОРТ (убраны \b, добавлена поддержка "серии", слитных/разделённых серий)
+      { regex: /(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?(?:\d{2}\s*[\-–—]?\s*\d{2}|\d{4})\s*(?:№|номер|N\.?)?\s*\d{6}/giu, type: 'PASSPORT', validate: null },
+    
+      // 🏢 ОРГАНИЗАЦИИ (ловит юр.форму + название, любые кавычки, до 100 символов)
+      { regex: /\b(?:ООО|ПАО|АО|ЗАО|ОАО|ИП|ФГУП|МУП|НКО|Фонд|Группа|Холдинг)\s*[«"]?[^»"\n]{2,100}[»"]?/giu, type: 'ORG', validate: null },
+    
+      // 📝 НАЗВАНИЯ В КАВЫЧКАХ (резервный, если нет юр. формы)
+      { regex: /[«"][^»"\n]{3,60}[»"]/g, type: 'TITLE', validate: null },
+    
       // 📅 ДАТЫ
       { regex: /\b(?:дата\s*(?:выдачи|регистрации)|выдан)\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/giu, type: 'DATE_ISSUE', validate: null },
       { regex: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, type: 'DATE_ISSUE', validate: null },
-      
-      // 🏢 ОРГАНИЗАЦИИ (Универсальный: ловит ПАО, АО, ООО с любыми кавычками или без них)
-      { regex: /\b(?:ООО|ПАО|АО|ЗАО|ОАО|ИП|ФГУП|МУП|НКО|Фонд)\s*[«"]?[А-ЯЁA-Z][^\n»"]{1,60}[»"]?/giu, type: 'ORG', validate: null },
-      
-      // 📝 НАЗВАНИЯ В КАВЫЧКАХ (без юр. формы, резервный)
-      { regex: /[«"][А-ЯЁA-Z][^\n»"]{2,50}[»"]/g, type: 'TITLE', validate: null },
-      
+    
       // 🆔 Документы и контакты
       { regex: /\b\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
       { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
@@ -231,16 +229,18 @@
       { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', validate: null },
       { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null }
     ];
-    
+
     for (const { regex, type, validate } of patterns) {
       let match;
       regex.lastIndex = 0;
       while ((match = regex.exec(text)) !== null) {
-        const word = match[0];
+        const word = match[0].trim();
+        if (word.length < 3) continue; // отсекаем мусор
         if (validate && !validate(word)) continue;
+      
         results.push({
           start: match.index + baseOffset,
-          end: match.index + word.length + baseOffset,
+          end: match.index + match[0].length + baseOffset,
           word,
           entity_group: type,
           score: 1.0
