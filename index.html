@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Анонимизатор (Улучшенная агрегация + чанкинг)</title>
+  <title>Анонимизатор</title>
   <style>
     :root {
       --primary: #2563eb; --success: #10b981; --error: #ef4444;
@@ -83,14 +83,14 @@
 </head>
 <body>
 <div class="card">
-  <h1>🔒 Анонимизатор (Улучшенная агрегация)</h1>
+  <h1>🔒 Анонимизатор</h1>
 
   <div id="fileWarning" class="warning">
-    ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code>
+    ⚠️ Данные не передаются на сервер, обрабатываются в локальной памяти вашего ПК (проверьте F12)</code>
   </div>
 
   <div class="btn-group">
-    <button id="loadBtn">🔄 Загрузить модель</button>
+    <button id="loadBtn">🔄 Загрузить NER-модель(~170Мб)</button>
     <button id="runBtn" disabled>🔒 Анонимизировать</button>
     <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
   </div>
@@ -109,22 +109,20 @@
   <div class="settings" id="typeSettings"></div>
 
   <div class="slider-container">
-    <label for="nerThreshold">Порог уверенности NER:</label>
+    <label for="nerThreshold">Порог уверенности NER (можно не двигать):</label>
     <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
     <span id="thresholdValue">0.70</span>
   </div>
 
   <textarea id="inputText" disabled placeholder="Введите текст...">Доверенность 
-Город Екатеринбург Свердловской области
+Город Самара Самарской области
 ...
-Паспорт серия 65 09 №690054, выдан ОУФМС России 01.01.2020...</textarea>
+Паспорт серия 66 66 №666666, выдан ОУФМС России 01.01.2021...</textarea>
 
   <div class="debug" id="debugPanel"></div>
 
   <div class="hint">
     <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
-    <strong>Улучшения:</strong> склейка всех типов сущностей, чанкинг длинных текстов, прогресс-бары<br>
-    <strong>Regex‑типы:</strong> паспорт (улучшенный), даты, СНИЛС, ИНН, ОГРН, телефон, email, организации
   </div>
 </div>
 
@@ -159,7 +157,7 @@
     PER:        { label: 'ФИО',             enabled: true },
     SINGLE_NAME:{ label: 'ФИО?',            enabled: false },
     ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
-    TITLE:      { label: 'НАЗВАНИЕ',        enabled: false },
+    TITLE:      { label: 'НАЗВАНИЕ',        enabled: true },
     LOC:        { label: 'МЕСТО',           enabled: true },
     GPE:        { label: 'ЛОКАЦИЯ',         enabled: true },
     MISC:       { label: 'ДРУГОЕ',          enabled: false },
