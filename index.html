@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🔒 Анонимизатор NER</title>
+  <title>🔒 Анонимизатор NER (Улучшенный)</title>
   <style>
     :root { --bg: #f5f7fa; --card: #ffffff; --primary: #2563eb; --text: #1f2937; --code: #e5e7eb; --debug-bg: #0f172a; --debug-text: #10b981; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
@@ -52,8 +52,31 @@
       <label>📝 Исходный текст:</label>
       <textarea id="inputText">Доверенность 
 Город Екатеринбург Свердловской области
-...
-Паспорт серия 65 09 №690054, выдан ОУФМС России...</textarea>
+Тридцатое апреля две тысячи двадцать шестого года
+
+Публичное акционерное общество «Т Плюс», ИНН 6315376946, ОГРН 1056315070350, свидетельство о государственной регистрации юридического лица: серия 63 № 001658830, дата государственной регистрации: 01 августа 2005 года, наименование регистрирующего органа: Инспекция Федеральной налоговой службы по Ленинскому району г. Самары, КПП 502401001, адрес юридического лица: 143421, Московская область, г.о. Красногорск, тер. автодорога Балтия, км 26-й, д. 5, стр. 3, офис 506, действующее на основании Устава, зарегистрированного Межрайонной инспекцией Федеральной налоговой службы № 23 по Московской области 03 июля 2025 года, номер регистрации: 2255005662525,
+
+именуемое далее «Общество»,
+
+в лице Директора филиала Общества «Свердловский» Родина Павла Валерьевича,
+паспорт серия: 6520 № 038401, выдан ГУ МВД России по Свердловской области 29 января 2020 года, код подразделения: 660-004, действующего на основании доверенности от 19 мая 2025 года, зарегистрированной нотариусом Новиковым Андреем Николаевичем за номером в реестре 77/406-н/77-2025-1-481, сроком действия по 31 октября 2027 года включительно, 
+
+уполномочивает:
+
+Чикарева Константина Алексеевича, паспорт серия 65 09 №690054, выдан ОУФМС России по Свердловской обл. в Железнодорожном районе города Екатеринбурга,  
+
+именуемого далее «Поверенный», осуществлять от имени и в интересах Общества, в рамках хозяйственной деятельности филиала Общества «Свердловский», действия, направленные на получение векселей, в том числе на подписание от имени Общества актов приема-передачи векселей.
+
+Доверенность выдана без права передоверия полномочий по тридцатое мая две тысячи двадцать шестого года включительно.
+
+
+Подпись Чикарева Константина Алексеевича _____________________удостоверяю
+
+
+
+Директор Свердловского Филиала ПАО «Т Плюс» 
+Родин Павел Валерьевич________________________________________________
+</textarea>
 
       <label>✅ Результат:</label>
       <div id="outputResult" class="result-box">Нажмите «Анонимизировать»</div>
@@ -66,10 +89,9 @@
   </div>
 
   <script type="module">
-    // Импорт библиотеки HuggingFace Transformers.js (работает в браузере)
-    import { pipeline, env } from 'https://esm.sh/@huggingface/transformers@2.17.0';
+    // ✅ ИСПРАВЛЕННЫЙ ИМПОРТ (версия 3.4.0, как в вашем рабочем коде)
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
     
-    // Разрешаем загрузку из сети, запрещаем локальные пути по умолчанию
     env.allowLocalModels = false;
     env.useBrowserCache = true;
 
@@ -80,16 +102,13 @@
     const thresholdVal = document.getElementById('thresholdVal');
     const debugBox = document.getElementById('debugOutput');
 
-    // Обновление значения ползунка
     thresholdInput.addEventListener('input', () => thresholdVal.textContent = thresholdInput.value);
 
-    // Функция логирования в отладочное окно
     function log(msg, type = 'info') {
       const time = new Date().toLocaleTimeString();
       const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
       debugBox.textContent += `\n[${time}] ${icon} ${msg}`;
       debugBox.scrollTop = debugBox.scrollHeight;
-      console.log(`[${type}] ${msg}`);
     }
 
     // ---------------------------------------------------------
@@ -98,12 +117,11 @@
     document.getElementById('loadModelBtn').onclick = async () => {
       try {
         document.getElementById('loadModelBtn').disabled = true;
-        log('Начало загрузки модели (~150-300 МБ, зависит от сети)...');
+        log('Начало загрузки модели (~180 МБ)...');
         modelProgress.value = 5;
 
         classifier = await pipeline('token-classification', 'onnx-community/bert-base-NER-Russian-ONNX', {
           progress_callback: (progress) => {
-            // Трансформерс отдаёт прогресс по файлам. Берём последний и масштабируем
             if (progress.progress !== undefined) {
               modelProgress.value = Math.min(100, Math.round(progress.progress * 100));
             }
@@ -112,7 +130,7 @@
 
         modelProgress.value = 100;
         document.getElementById('anonymizeBtn').disabled = false;
-        log('Модель успешно загружена и готова к работе', 'success');
+        log('Модель успешно загружена', 'success');
       } catch (err) {
         log(`Ошибка загрузки: ${err.message}`, 'error');
         document.getElementById('loadModelBtn').disabled = false;
@@ -125,19 +143,19 @@
     const REGEX_PATTERNS = [
       // ПАСПОРТ: ловит "паспорт серия 65 09 №690054", "серия 12-34 567890" и т.д.
       { type: 'ПАСПОРТ', re: /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?\d{2}\s*[\s\-]?\s*\d{2}\s*(?:№|номер|N)?\s*\d{6}\b/gi },
-      // ПАСПОРТ (альтернативный короткий формат): 12 34 567890 или 12-34 567890
+      // ПАСПОРТ (короткий формат): 12 34 567890 или 12-34 567890
       { type: 'ПАСПОРТ', re: /\b\d{2}\s*[\s\-]\s*\d{2}\s+\d{6}\b/g },
-      // ТЕЛЕФОН: +7(XXX)XXX-XX-XX, 8-XXX-XXX-XX-XX
+      // ТЕЛЕФОН
       { type: 'ТЕЛЕФОН', re: /(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g },
       // EMAIL
       { type: 'EMAIL', re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
-      // ИНН (10 или 12 цифр)
+      // ИНН
       { type: 'ИНН', re: /(?:ИНН|инн)\s*\d{10,12}/gi },
-      // СНИЛС (XXX-XXX-XXX XX)
+      // СНИЛС
       { type: 'СНИЛС', re: /(?:СНИЛС|снилс)\s*\d{3}[\s\-]?\d{3}[\s\-]?\d{3}[\s\-]?\d{2}/gi },
-      // ОГРН (13 или 15 цифр)
+      // ОГРН
       { type: 'ОГРН', re: /(?:ОГРН|огрн)\s*\d{13,15}/gi },
-      // ДАТЫ (ДД.ММ.ГГГГ, ДД/ММ/ГГГГ)
+      // ДАТЫ
       { type: 'ДАТА', re: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g }
     ];
 
@@ -153,11 +171,11 @@
     }
 
     // ---------------------------------------------------------
-    // 3. ПОБЛОЧНАЯ ОБРАБОТКА + СЛЕЙКА ТОКЕНОВ (FIX ДРОБЛЕНИЯ)
+    // 3. ПОБЛОЧНАЯ ОБРАБОТКА + СКЛЕЙКА ТОКЕНОВ
     // ---------------------------------------------------------
     async function processChunks(text, threshold) {
-      const CHUNK_SIZE = 350; // ~350 символов укладывается в лимит 512 токенов BERT
-      const OVERLAP = 40;     // перекрытие, чтобы не резать слова на границах
+      const CHUNK_SIZE = 350; 
+      const OVERLAP = 40;     
       const allRaw = [];
       
       for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
@@ -168,14 +186,12 @@
         
         for (const ent of results) {
           if (ent.score >= threshold) {
-            // Смещаем координаты обратно в полный текст
             ent.start += i;
             ent.end += i;
             allRaw.push(ent);
           }
         }
         
-        // Обновляем прогресс и даём браузеру "передохнуть"
         const pct = Math.min(100, Math.round(((i + chunk.length) / text.length) * 100));
         textProgress.value = pct;
         await new Promise(r => setTimeout(r, 0));
@@ -183,7 +199,6 @@
       return allRaw;
     }
 
-    // Карта соответствия меток модели -> человекочитаемым русским названиям
     const ENTITY_MAP = {
       'FIRST_NAME': 'ФИО', 'LAST_NAME': 'ФИО', 'MIDDLE_NAME': 'ФИО',
       'CITY': 'МЕСТО', 'REGION': 'МЕСТО', 'COUNTRY': 'МЕСТО', 'DISTRICT': 'МЕСТО',
@@ -192,8 +207,6 @@
 
     function mergeTokens(rawTokens, text) {
       if (!rawTokens.length) return [];
-      
-      // Сортируем по позиции
       rawTokens.sort((a, b) => a.start - b.start);
       const merged = [];
       let curr = { start: rawTokens[0].start, end: rawTokens[0].end, entity: rawTokens[0].entity, score: rawTokens[0].score };
@@ -203,10 +216,9 @@
         const cleanT = t.entity.replace(/^[BIUL]-/, '');
         const cleanC = curr.entity.replace(/^[BIUL]-/, '');
         
-        // Склеиваем, если позиции стыкуются И тип совпадает
         if (t.start === curr.end && cleanT === cleanC) {
           curr.end = t.end;
-          curr.score = Math.min(curr.score, t.score); // берём минимальную уверенность для надёжности
+          curr.score = Math.min(curr.score, t.score);
         } else {
           merged.push(curr);
           curr = { start: t.start, end: t.end, entity: t.entity, score: t.score };
@@ -214,7 +226,6 @@
       }
       merged.push(curr);
 
-      // Преобразуем в итоговый формат
       return merged.map(e => {
         const baseType = e.entity.replace(/^[BIUL]-/, '');
         return {
@@ -228,10 +239,9 @@
     }
 
     // ---------------------------------------------------------
-    // 4. ФИНАЛЬНАЯ АНОНИМИЗАЦИЯ (ДЕДУПЛИКАЦИЯ + ЗАМЕНА)
+    // 4. ФИНАЛЬНАЯ АНОНИМИЗАЦИЯ
     // ---------------------------------------------------------
     function anonymize(text, allEntities) {
-      // Удаляем пересекающиеся сущности, оставляя самые длинные или уверенные
       allEntities.sort((a, b) => a.start - b.start);
       const unique = [];
       for (const e of allEntities) {
@@ -243,7 +253,6 @@
         }
       }
 
-      // Посимвольная сборка результата
       let result = '';
       let lastIdx = 0;
       const counters = {};
@@ -259,7 +268,7 @@
     }
 
     // ---------------------------------------------------------
-    // 5. ЗАПУСК ОБРАБОТКИ
+    // 5. ЗАПУСК
     // ---------------------------------------------------------
     document.getElementById('anonymizeBtn').onclick = async () => {
       const text = document.getElementById('inputText').value;
@@ -272,17 +281,14 @@
 
         const threshold = parseFloat(thresholdInput.value);
         
-        // 1. NER по кускам
         log(`🔍 Запуск NER (порог ${threshold})...`);
         const rawTokens = await processChunks(text, threshold);
         const mergedNer = mergeTokens(rawTokens, text);
         log(`🧩 NER найдено сырых: ${rawTokens.length}, после склейки: ${mergedNer.length}`);
 
-        // 2. Regex
         const regexEnts = extractRegex(text);
         log(`📝 Regex найдено: ${regexEnts.length}`);
 
-        // 3. Объединение и замена
         const combined = [...mergedNer, ...regexEnts];
         const finalText = anonymize(text, combined);
 
