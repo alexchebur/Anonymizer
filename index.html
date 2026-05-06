@@ -211,29 +211,27 @@
     const dateRegex = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g;
 
     const patterns = [
-      // 🛂 ПАСПОРТ (универсальный, с флагом u для корректной работы с кириллицей и №)
+      // 🛂 ПАСПОРТ (ловит 65 23 и 6523)
       { regex: /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?(?:\d{2}[\s-]?\d{2}|\d{4})\s*(?:№|номер|N\.?)?\s*\d{6}\b/giu, type: 'PASSPORT', validate: null },
       
       // 📅 ДАТЫ
       { regex: /\b(?:дата\s*(?:выдачи|регистрации)|выдан)\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/giu, type: 'DATE_ISSUE', validate: null },
       { regex: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, type: 'DATE_ISSUE', validate: null },
       
-      // 🆔 Документы (с валидацией)
+      // 🏢 ОРГАНИЗАЦИИ (Универсальный: ловит ПАО, АО, ООО с любыми кавычками или без них)
+      { regex: /\b(?:ООО|ПАО|АО|ЗАО|ОАО|ИП|ФГУП|МУП|НКО|Фонд)\s*[«"]?[А-ЯЁA-Z][^\n»"]{1,60}[»"]?/giu, type: 'ORG', validate: null },
+      
+      // 📝 НАЗВАНИЯ В КАВЫЧКАХ (без юр. формы, резервный)
+      { regex: /[«"][А-ЯЁA-Z][^\n»"]{2,50}[»"]/g, type: 'TITLE', validate: null },
+      
+      // 🆔 Документы и контакты
       { regex: /\b\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
       { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
       { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', validate: isValidOGRN },
-      
-      // 📞 Телефоны
       { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', validate: null },
-      
-      // 📧 Email
-      { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null },
-      
-      // 🏢 Организации и названия
-      { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/gi, type: 'ORG', validate: null },
-      { regex: /«[А-ЯЁA-Z][^»]{0,50}»/g, type: 'TITLE', validate: null }
+      { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null }
     ];
-
+    
     for (const { regex, type, validate } of patterns) {
       let match;
       regex.lastIndex = 0;
