@@ -211,15 +211,26 @@
     const dateRegex = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g;
 
     const patterns = [
-      { regex: passportRegex, type: 'PASSPORT', validate: null },
-      { regex: dateRegex, type: 'DATE_ISSUE', validate: null },
-      { regex: /\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
+      // 🛂 ПАСПОРТ (универсальный, с флагом u для корректной работы с кириллицей и №)
+      { regex: /\b(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?\d{2}\s*[-\s]?\s*\d{2}\s*(?:№|номер|N\.?)?\s*\d{6}\b/giu, type: 'PASSPORT', validate: null },
+      
+      // 📅 ДАТЫ
+      { regex: /\b(?:дата\s*(?:выдачи|регистрации)|выдан)\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/giu, type: 'DATE_ISSUE', validate: null },
+      { regex: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, type: 'DATE_ISSUE', validate: null },
+      
+      // 🆔 Документы (с валидацией)
+      { regex: /\b\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
       { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
       { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', validate: isValidOGRN },
+      
+      // 📞 Телефоны
       { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', validate: null },
-      { regex: /\b[87]\d{10}\b/g, type: 'PHONE', validate: null },
+      
+      // 📧 Email
       { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null },
-      { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/g, type: 'ORG', validate: null },
+      
+      // 🏢 Организации и названия
+      { regex: /\b(?:ООО|ЗАО|АО|ОАО|ПАО|ИП)\s*«?[А-ЯЁA-Z][^»\n]{0,50}»?/gi, type: 'ORG', validate: null },
       { regex: /«[А-ЯЁA-Z][^»]{0,50}»/g, type: 'TITLE', validate: null }
     ];
 
