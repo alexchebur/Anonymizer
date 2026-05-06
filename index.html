@@ -307,66 +307,87 @@
   }
 
   // ✅ ОБЪЕДИНЕНИЕ СУЩНОСТЕЙ ЛЮБОГО ТИПА (не только PER)
-  function mergeAdjacentEntities(entities, text) {
-    const merged = [];
-    for (const e of entities) {
-      if (merged.length === 0) {
-        merged.push({ ...e });
-        continue;
-      }
-      const prev = merged[merged.length - 1];
-      const sameType = prev.entity_group === e.entity_group;
-      
-      // Склеиваем, если: одинаковый тип + позиции рядом + между ними нет запятых/переносов
-      if (sameType && e.start <= prev.end + 3) {
-        const between = text.slice(prev.end, e.start);
-        if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
-          prev.end = e.end;
-          prev.word = text.slice(prev.start, e.end);
-          prev.score = Math.min(prev.score, e.score);
-        } else {
-          merged.push({ ...e });
-        }
+// ✅ 1. Фильтрация "обрубков" и нормализация перед нумерацией
+function cleanEntities(entities, text) {
+  return entities.filter(e => {
+    // Отсекаем субтокены короче 3 букв (кроме цифр и валидных аббревиатур)
+    if (e.word.length < 3 && !/^\d+$/.test(e.word)) return false;
+    // Отсекаем одиночные русские буквы/предлоги
+    if (/^[а-яё]{1,2}$/i.test(e.word)) return false;
+    return true;
+  }).map(e => ({
+    ...e,
+    // Нормализуем ключ для группировки: нижний регистр, без лишних пробелов
+    normKey: e.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim()
+  }));
+}
+
+// ✅ 2. Улучшенная склейка смежных сущностей (агрессивнее для LOC/ORG)
+function mergeAdjacentEntities(entities, text) {
+  const merged = [];
+  for (const e of entities) {
+    if (merged.length === 0) {
+      merged.push({ ...e });
+      continue;
+    }
+    const prev = merged[merged.length - 1];
+    const isSameGroup = prev.entity_group === e.entity_group;
+    // Разрешаем склейку, если типы совпадают или оба относятся к локациям/организациям
+    const locOrgMerge = (['LOC','GPE','MISC','ORG'].includes(prev.entity_group) && 
+                         ['LOC','GPE','MISC','ORG'].includes(e.entity_group));
+    
+    if ((isSameGroup || locOrgMerge) && e.start <= prev.end + 3) {
+      const between = text.slice(prev.end, e.start);
+      if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
+        prev.end = e.end;
+        prev.word = text.slice(prev.start, e.end);
+        prev.score = Math.min(prev.score, e.score);
+        prev.normKey = prev.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
       } else {
         merged.push({ ...e });
       }
+    } else {
+      merged.push({ ...e });
     }
-    return merged;
   }
+  return merged;
+}
 
-  // Удаление дублей после чанкинга
-  function deduplicateEntities(entities) {
-    entities.sort((a, b) => a.start - b.start);
-    const unique = [];
-    for (const e of entities) {
-      if (unique.length === 0 || e.start >= unique[unique.length - 1].end) {
-        unique.push({ ...e });
-      } else {
-        const prev = unique[unique.length - 1];
-        // Оставляем более длинную или более уверенную сущность
-        if ((e.end - e.start) > (prev.end - prev.start) || e.score > prev.score) {
-          unique[unique.length - 1] = { ...e };
-        }
+// ✅ 3. Дедупликация с учётом перекрытий
+function deduplicateEntities(entities) {
+  entities.sort((a, b) => a.start - b.start);
+  const unique = [];
+  for (const e of entities) {
+    if (unique.length === 0 || e.start >= unique[unique.length - 1].end) {
+      unique.push({ ...e });
+    } else {
+      const prev = unique[unique.length - 1];
+      // Оставляем более длинную или уверенную сущность
+      if ((e.end - e.start) > (prev.end - prev.start) || e.score > prev.score) {
+        unique[unique.length - 1] = { ...e };
       }
     }
-    return unique;
   }
+  return unique;
+}
 
-  // Нумерация сущностей
-  function buildEntityNumbering(entities, text) {
-    const typeMap = {};
-    const numbers = [];
-    for (const e of entities) {
-      const type = e.entity_group;
-      if (!typeMap[type]) typeMap[type] = {};
-      const orig = text.slice(e.start, e.end);
-      if (!typeMap[type][orig]) {
-        typeMap[type][orig] = Object.keys(typeMap[type]).length + 1;
-      }
-      numbers.push(typeMap[type][orig]);
+// ✅ 4. Сквозная нумерация с нормализацией ключей
+function buildEntityNumbering(entities) {
+  const typeMap = {}; // { 'МЕСТО': { 'киров': 1, 'сыктывка': 2 }, ... }
+  const numbers = [];
+
+  for (const e of entities) {
+    const type = e.entity_group;
+    const key = e.normKey || e.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    
+    if (!typeMap[type]) typeMap[type] = {};
+    if (!typeMap[type][key]) {
+      typeMap[type][key] = Object.keys(typeMap[type]).length + 1;
     }
-    return { typeMap, numbers };
+    numbers.push(typeMap[type][key]);
   }
+  return { typeMap, numbers };
+}
 
   function renderTypeSettings() {
     let html = '';
@@ -514,6 +535,12 @@
       // 5. Объединение всех источников
       let all = [...nerMerged, ...regexEntities, ...singleNames]
         .filter(e => entityConfig[e.entity_group]?.enabled);
+      // ... после сбора all = [...nerMerged, ...regexEntities, ...singleNames] ...
+      let cleaned = cleanEntities(all, text);
+      let merged = mergeAdjacentEntities(cleaned, text);
+      let final = deduplicateEntities(merged);
+
+      const { numbers } = buildEntityNumbering(final);
 
       // 6. Удаление дублей после чанкинга
       const final = deduplicateEntities(all);
