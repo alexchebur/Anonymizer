@@ -372,21 +372,72 @@ function deduplicateEntities(entities) {
 }
 
 // ✅ 4. Сквозная нумерация с нормализацией ключей
+// 1. Вспомогательная функция: расстояние Левенштейна
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  const dp = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] 
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// 2. Обновлённая нумерация с нечётким поиском для ФИО
 function buildEntityNumbering(entities) {
-  const typeMap = {}; // { 'МЕСТО': { 'киров': 1, 'сыктывка': 2 }, ... }
+  const groups = {}; // { type: { map: Map, nextId: 1 } }
   const numbers = [];
 
   for (const e of entities) {
     const type = e.entity_group;
-    const key = e.normKey || e.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-    
-    if (!typeMap[type]) typeMap[type] = {};
-    if (!typeMap[type][key]) {
-      typeMap[type][key] = Object.keys(typeMap[type]).length + 1;
+    if (!groups[type]) groups[type] = { map: new Map(), nextId: 1 };
+
+    // Нормализация: нижний регистр, убираем пунктуацию, схлопываем пробелы
+    const clean = (e.word || '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .trim()
+      .replace(/\s+/g, ' ');
+      
+    if (!clean) { numbers.push(1); continue; }
+
+    let id = groups[type].map.get(clean); // Точное совпадение
+
+    // Если точного нет, ищем похожее (ТОЛЬКО для ФИО/PER)
+    if (!id && (type === 'PER' || type === 'ФИО' || type === 'SINGLE_NAME')) {
+      const threshold = Math.max(2, Math.floor(clean.length * 0.3)); // Допуск ~30% разницы
+      
+      for (const [key, existingId] of groups[type].map) {
+        // 1. Одна строка вложена в другую (Иванов vs Иванов Иван)
+        if (key.includes(clean) || clean.includes(key)) {
+          id = existingId;
+          groups[type].map.set(clean, id); // запоминаем как алиас
+          break;
+        }
+        // 2. Нечёткое сравнение по Левенштейну (Иванов vs Иванову vs Ивановым)
+        if (levenshtein(clean, key) <= threshold) {
+          id = existingId;
+          groups[type].map.set(clean, id);
+          break;
+        }
+      }
     }
-    numbers.push(typeMap[type][key]);
+
+    // Если не нашли похожее, создаём новый ID
+    if (!id) {
+      id = groups[type].nextId++;
+      groups[type].map.set(clean, id);
+    }
+    
+    numbers.push(id);
   }
-  return { typeMap, numbers };
+  return { groups, numbers };
+}
 }
 
   function renderTypeSettings() {
