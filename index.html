@@ -550,7 +550,33 @@
       loadBtn.textContent = '🔄 Загрузить модель';
     }
   });
+  // ✅ Правило: не маскировать, если сущность "режет" слово, 
+  // а соседняя часть не помечена моделью как часть той же сущности
+  function filterBoundaryArtifacts(entities, text) {
+    // 1. Создаем карту покрытия: какие символы текста входят в какие-либо сущности
+    const covered = new Array(text.length).fill(false);
+    entities.forEach(e => {
+      for (let i = Math.max(0, e.start); i < Math.min(text.length, e.end); i++) {
+        covered[i] = true;
+      }
+    });
 
+    // 2. Фильтруем сущности, обрывающие слова посередине
+    return entities.filter(e => {
+      // Проверяем символ СЛЕВА от начала сущности
+      if (e.start > 0 && !covered[e.start - 1]) {
+        const leftChar = text[e.start - 1];
+        // Если слева буква/цифра без пробела/знака препинания — это обрывок слова
+        if (/\p{L}|\p{N}/u.test(leftChar)) return false;
+      }
+      // Проверяем символ СПРАВА от конца сущности
+      if (e.end < text.length && !covered[e.end]) {
+        const rightChar = text[e.end];
+        if (/\p{L}|\p{N}/u.test(rightChar)) return false;
+      }
+      return true;
+    });
+  }  
   // Анонимизация
   runBtn.addEventListener('click', async () => {
     const text = textarea.value;
