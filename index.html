@@ -358,19 +358,40 @@
   function mergeAdjacentEntities(entities, text) {
     const merged = [];
     for (const e of entities) {
-      if (merged.length === 0) { merged.push({ ...e }); continue; }
+      if (merged.length === 0) {
+        merged.push({ ...e });
+        continue;
+      }
       const prev = merged[merged.length - 1];
       const isSameGroup = prev.entity_group === e.entity_group;
-      const locOrgMerge = (['LOC','GPE','MISC','ORG'].includes(prev.entity_group) && ['LOC','GPE','MISC','ORG'].includes(e.entity_group));
+      // Разрешаем склейку, если типы совпадают или оба относятся к локациям/организациям
+      const locOrgMerge = (['LOC','GPE','MISC','ORG'].includes(prev.entity_group) && 
+                           ['LOC','GPE','MISC','ORG'].includes(e.entity_group));
+      
       if ((isSameGroup || locOrgMerge) && e.start <= prev.end + 3) {
         const between = text.slice(prev.end, e.start);
+        
+        // 🛡️ ЗАЩИТА ОТ АРТЕФАКТОВ ТОКЕНИЗАЦИИ (Ваш запрос)
+        const mergedWord = text.slice(prev.start, e.end).trim().toLowerCase();
+        // Если слово длинное (>20 символов), не содержит пробелов и заглавных букв — это мусор из субтокенов
+        if (mergedWord.length > 20 && !/\s/.test(mergedWord) && !/[А-ЯЁ]{2,}/.test(mergedWord)) {
+          // Не склеиваем, начинаем новую сущность
+          merged.push({ ...e });
+          continue;
+        }
+
+        // Стандартная проверка на разделители
         if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
           prev.end = e.end;
           prev.word = text.slice(prev.start, e.end);
           prev.score = Math.min(prev.score, e.score);
           prev.normKey = prev.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
-        } else { merged.push({ ...e }); }
-      } else { merged.push({ ...e }); }
+        } else {
+          merged.push({ ...e });
+        }
+      } else {
+        merged.push({ ...e });
+      }
     }
     return merged;
   }
