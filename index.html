@@ -610,10 +610,20 @@
       const singleNames = entityConfig.SINGLE_NAME?.enabled ? findSingleNames(text) : [];
       lastDebug += `🔎 Regex (${regexEntities.length}), Резервные имена (${singleNames.length})\n`;
 
-      let all = [...nerMerged, ...regexEntities, ...singleNames].filter(e => entityConfig[e.entity_group]?.enabled);
+      // 5. Объединение всех источников
+      let all = [...nerMerged, ...regexEntities, ...singleNames]
+        .filter(e => entityConfig[e.entity_group]?.enabled);
+
+      // Очистка (можно убрать стоп-слова из cleanEntities, они больше не нужны)
       let cleaned = cleanEntities(all, text);
-      let merged = mergeAdjacentEntities(cleaned, text);
+      
+      // 🛡️ НОВОЕ: фильтрация по границам слов (вместо словаря стоп-слов)
+      let boundarySafe = filterBoundaryArtifacts(cleaned, text);
+      
+      let merged = mergeAdjacentEntities(boundarySafe, text);
       let final = deduplicateEntities(merged);
+
+      // Нумерация и замена...
       const { numbers } = buildEntityNumbering(final);
       
       lastDebug += `✅ Итоговые сущности (${final.length}):\n`;
