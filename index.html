@@ -79,6 +79,11 @@
       display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;
     }
     input[type="range"] { width: 150px; }
+    select {
+      padding: 0.4rem 0.8rem; border-radius: 6px; 
+      border: 1px solid var(--border); background: white;
+      font-size: 0.95rem; cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -86,22 +91,37 @@
   <h1>🔒 Анонимизатор</h1>
 
   <div id="fileWarning" class="warning">
-    ⚠️ Данные не передаются на сервер, обрабатываются в локальной памяти вашего ПК (проверьте F12)</code>
+    ⚠️ Откройте через локальный сервер: <code>python -m http.server 8000</code><br>
+    Данные не передаются на сервер, обрабатываются в локальной памяти вашего ПК.
   </div>
 
+  <!-- 🔀 ВЫБОР МОДЕЛИ -->
+  <div class="settings" style="margin-bottom:1rem;">
+    <div class="setting">
+      <label for="modelSelect"><strong>Выберите модель:</strong></label>
+      <select id="modelSelect">
+        <option value="onnx-community/bert-base-NER-Russian-ONNX">
+          🧠 bert-base-NER-Russian (полная, ~170 МБ)
+        </option>
+        <option value="alexchebur/ner-rubert-tiny-news-onnx">
+          ⚡ ner-rubert-tiny-news ONNX (квантованная, ~28 МБ)
+        </option>
+      </select>
+    </div>
+  </div>
+  <div id="modelInfo" class="hint" style="margin:-0.5rem 0 1rem 0; font-size:0.85rem;"></div>
+
   <div class="btn-group">
-    <button id="loadBtn">🔄 Загрузить NER-модель(~170Мб)</button>
+    <button id="loadBtn">🔄 Загрузить модель</button>
     <button id="runBtn" disabled>🔒 Анонимизировать</button>
     <button id="debugToggle" style="background:#64748b;color:white">🐛 Отладка</button>
   </div>
 
   <div id="status" class="status">Нажмите «Загрузить модель»</div>
   
-  <!-- Прогресс загрузки модели -->
   <div class="progress" title="Загрузка модели">
     <div class="progress-bar" id="modelProgressBar"></div>
   </div>
-  <!-- Прогресс обработки текста -->
   <div class="progress" title="Обработка текста">
     <div class="progress-bar" id="textProgressBar"></div>
   </div>
@@ -109,7 +129,7 @@
   <div class="settings" id="typeSettings"></div>
 
   <div class="slider-container">
-    <label for="nerThreshold">Порог уверенности NER (можно не двигать):</label>
+    <label for="nerThreshold">Порог уверенности NER:</label>
     <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.7">
     <span id="thresholdValue">0.70</span>
   </div>
@@ -122,7 +142,7 @@
   <div class="debug" id="debugPanel"></div>
 
   <div class="hint">
-    <strong>Модель:</strong> <code>onnx-community/bert-base-NER-Russian-ONNX</code><br>
+    <strong>Приватность:</strong> всё обрабатывается локально в браузере 🔐
   </div>
 </div>
 
@@ -136,6 +156,45 @@
   env.allowLocalModels = false;
   env.useBrowserCache = true;
 
+  // --- КОНФИГУРАЦИЯ МОДЕЛЕЙ ---
+  const modelConfigs = {
+    'onnx-community/bert-base-NER-Russian-ONNX': {
+      name: 'bert-base-NER-Russian',
+      size: '~170 МБ',
+      entities: {
+        PER:        { label: 'ФИО',             enabled: true },
+        SINGLE_NAME:{ label: 'ФИО?',            enabled: false },
+        ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
+        TITLE:      { label: 'НАЗВАНИЕ',        enabled: true },
+        LOC:        { label: 'МЕСТО',           enabled: true },
+        GPE:        { label: 'ЛОКАЦИЯ',         enabled: true },
+        MISC:       { label: 'ДРУГОЕ',          enabled: false },
+        PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
+        DATE_ISSUE: { label: 'ДАТА',            enabled: true },
+        SNILS:      { label: 'СНИЛС',           enabled: true },
+        INN:        { label: 'ИНН',             enabled: true },
+        OGRN:       { label: 'ОГРН',            enabled: true },
+        PHONE:      { label: 'ТЕЛЕФОН',         enabled: true },
+        EMAIL:      { label: 'EMAIL',           enabled: true }
+      }
+    },
+    'alexchebur/ner-rubert-tiny-news-onnx': {
+      name: 'ner-rubert-tiny-news (ONNX)',
+      size: '~28 МБ',
+      entities: {
+        PER:        { label: 'ФИО',             enabled: true },
+        ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
+        LOC:        { label: 'МЕСТО',           enabled: true },
+        GEOPOLIT:   { label: 'РЕГИОН/СТРАНА',   enabled: true },
+        MEDIA:      { label: 'СМИ',             enabled: true }
+      }
+    }
+  };
+
+  // Глобальный конфиг сущностей (для совместимости с остальным кодом)
+  const entityConfig = { ...modelConfigs['onnx-community/bert-base-NER-Russian-ONNX'].entities };
+
+  // DOM-элементы
   const loadBtn = document.getElementById('loadBtn');
   const runBtn = document.getElementById('runBtn');
   const debugToggle = document.getElementById('debugToggle');
@@ -147,30 +206,14 @@
   const nerThreshold = document.getElementById('nerThreshold');
   const thresholdValue = document.getElementById('thresholdValue');
   const typeSettings = document.getElementById('typeSettings');
+  const modelSelect = document.getElementById('modelSelect');
+  const modelInfo = document.getElementById('modelInfo');
 
   let nerPipeline;
   let modelLoaded = false;
   let lastDebug = '';
 
-  // Конфигурация сущностей
-  const entityConfig = {
-    PER:        { label: 'ФИО',             enabled: true },
-    SINGLE_NAME:{ label: 'ФИО?',            enabled: false },
-    ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
-    TITLE:      { label: 'НАЗВАНИЕ',        enabled: true },
-    LOC:        { label: 'МЕСТО',           enabled: true },
-    GPE:        { label: 'ЛОКАЦИЯ',         enabled: true },
-    MISC:       { label: 'ДРУГОЕ',          enabled: false },
-    PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
-    DATE_ISSUE: { label: 'ДАТА',            enabled: true },
-    SNILS:      { label: 'СНИЛС',           enabled: true },
-    INN:        { label: 'ИНН',             enabled: true },
-    OGRN:       { label: 'ОГРН',            enabled: true },
-    PHONE:      { label: 'ТЕЛЕФОН',         enabled: true },
-    EMAIL:      { label: 'EMAIL',           enabled: true }
-  };
-
-  // --- Валидация ---
+  // --- Валидация (оставляем без изменений) ---
   function isValidINN(inn) {
     if (!/^\d{12}$/.test(inn)) return false;
     const d = inn.split('').map(Number);
@@ -201,79 +244,46 @@
     return check === (remainder === 10 ? 0 : remainder);
   }
 
-  // --- Regex-сущности (ОПТИМИЗИРОВАНО) ---
+  // --- Regex-сущности (без изменений) ---
   function findRegexEntities(text, baseOffset = 0) {
     const results = [];
-  
-    // 🔍 Паттерны в порядке приоритета (специфичные → общие)
     const patterns = [
-      // 🛂 ПАСПОРТ (убраны \b, добавлена поддержка "серии", слитных/разделённых серий)
       { regex: /(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?(?:\d{2}\s*[\-–—]?\s*\d{2}|\d{4})\s*(?:№|номер|N\.?)?\s*\d{6}/giu, type: 'PASSPORT', validate: null },
-    
-      // 🏢 ОРГАНИЗАЦИИ (ловит юр.форму + название, любые кавычки, до 100 символов)
       { regex: /\b(?:ООО|ПАО|АО|ЗАО|ОАО|ИП|ФГУП|МУП|НКО|Фонд|Группа|Холдинг)\s*[«"]?[^»"\n]{2,100}[»"]?/giu, type: 'ORG', validate: null },
-    
-      // 📝 НАЗВАНИЯ В КАВЫЧКАХ (резервный, если нет юр. формы)
       { regex: /[«"][^»"\n]{3,60}[»"]/g, type: 'TITLE', validate: null },
-    
-      // 📅 ДАТЫ
       { regex: /\b(?:дата\s*(?:выдачи|регистрации)|выдан)\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/giu, type: 'DATE_ISSUE', validate: null },
       { regex: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, type: 'DATE_ISSUE', validate: null },
-    
-      // 🆔 Документы и контакты
       { regex: /\b\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
       { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
       { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', validate: isValidOGRN },
       { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', validate: null },
       { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null }
     ];
-
     for (const { regex, type, validate } of patterns) {
-      let match;
-      regex.lastIndex = 0;
+      let match; regex.lastIndex = 0;
       while ((match = regex.exec(text)) !== null) {
         const word = match[0].trim();
-        if (word.length < 3) continue; // отсекаем мусор
+        if (word.length < 3) continue;
         if (validate && !validate(word)) continue;
-      
-        results.push({
-          start: match.index + baseOffset,
-          end: match.index + match[0].length + baseOffset,
-          word,
-          entity_group: type,
-          score: 1.0
-        });
+        results.push({ start: match.index + baseOffset, end: match.index + match[0].length + baseOffset, word, entity_group: type, score: 1.0 });
       }
     }
     return results;
   }
 
-  // Резервный поиск одиночных слов
   function findSingleNames(text) {
     const words = [];
     const regex = /\b([А-ЯЁ][а-яё]{1,30})\b/g;
-    const stopWords = new Set([
-      'ООО', 'ЗАО', 'АО', 'ПАО', 'ОАО', 'ИП', 'Тел', 'Телефон', 'Email', 'Почта',
-      'Адрес', 'Город', 'Улица', 'Дом', 'Квартира', 'Паспорт', 'СНИЛС', 'ИНН', 'ОГРН',
-      'Яндекс', 'Гугл', 'Майл', 'Рамблер', 'России', 'Российской'
-    ]);
-    let match;
-    regex.lastIndex = 0;
+    const stopWords = new Set(['ООО','ЗАО','АО','ПАО','ОАО','ИП','Тел','Телефон','Email','Почта','Адрес','Город','Улица','Дом','Квартира','Паспорт','СНИЛС','ИНН','ОГРН','Яндекс','Гугл','Майл','Рамблер','России','Российской']);
+    let match; regex.lastIndex = 0;
     while ((match = regex.exec(text)) !== null) {
       const word = match[0];
       if (stopWords.has(word)) continue;
-      words.push({
-        start: match.index,
-        end: match.index + word.length,
-        word,
-        entity_group: 'SINGLE_NAME',
-        score: 0.5
-      });
+      words.push({ start: match.index, end: match.index + word.length, word, entity_group: 'SINGLE_NAME', score: 0.5 });
     }
     return words;
   }
 
-  // Поиск позиций токенов в тексте
   function locateTokens(tokens, text) {
     const located = [];
     let currentPos = 0;
@@ -284,12 +294,7 @@
       let idx = text.indexOf(word, currentPos);
       if (idx === -1) idx = text.indexOf(word, Math.max(0, currentPos - 5));
       if (idx === -1) continue;
-      located.push({
-        ...t,
-        start: idx,
-        end: idx + word.length,
-        word: text.slice(idx, idx + word.length)
-      });
+      located.push({ ...t, start: idx, end: idx + word.length, word: text.slice(idx, idx + word.length) });
       currentPos = idx + word.length;
     }
     return located;
@@ -299,196 +304,146 @@
     LAST_NAME: 'PER', FIRST_NAME: 'PER', MIDDLE_NAME: 'PER',
     ORG: 'ORG', ORGANIZATION: 'ORG',
     LOC: 'LOC', GPE: 'GPE', CITY: 'LOC', STREET: 'LOC', HOUSE: 'LOC', REGION: 'LOC',
-    MISC: 'MISC'
+    MISC: 'MISC', GEOPOLIT: 'GPE', MEDIA: 'ORG'
   };
 
   function isSingleCharJunk(e) {
     return e.entity_group === 'PER' && e.word.length === 1 && !e.word.match(/[А-ЯЁA-Z]\.?/);
   }
 
-  // ✅ ОБЪЕДИНЕНИЕ СУЩНОСТЕЙ ЛЮБОГО ТИПА (не только PER)
-// ✅ 1. Фильтрация "обрубков" и нормализация перед нумерацией
-function cleanEntities(entities, text) {
-  return entities.filter(e => {
-    // Отсекаем субтокены короче 3 букв (кроме цифр и валидных аббревиатур)
-    if (e.word.length < 3 && !/^\d+$/.test(e.word)) return false;
-    // Отсекаем одиночные русские буквы/предлоги
-    if (/^[а-яё]{1,2}$/i.test(e.word)) return false;
-    return true;
-  }).map(e => ({
-    ...e,
-    // Нормализуем ключ для группировки: нижний регистр, без лишних пробелов
-    normKey: e.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim()
-  }));
-}
+  function cleanEntities(entities, text) {
+    return entities.filter(e => {
+      if (e.word.length < 3 && !/^\d+$/.test(e.word)) return false;
+      if (/^[а-яё]{1,2}$/i.test(e.word)) return false;
+      return true;
+    }).map(e => ({ ...e, normKey: e.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim() }));
+  }
 
-// ✅ 2. Улучшенная склейка смежных сущностей (агрессивнее для LOC/ORG)
-function mergeAdjacentEntities(entities, text) {
-  const merged = [];
-  for (const e of entities) {
-    if (merged.length === 0) {
-      merged.push({ ...e });
-      continue;
+  function mergeAdjacentEntities(entities, text) {
+    const merged = [];
+    for (const e of entities) {
+      if (merged.length === 0) { merged.push({ ...e }); continue; }
+      const prev = merged[merged.length - 1];
+      const isSameGroup = prev.entity_group === e.entity_group;
+      const locOrgMerge = (['LOC','GPE','MISC','ORG'].includes(prev.entity_group) && ['LOC','GPE','MISC','ORG'].includes(e.entity_group));
+      if ((isSameGroup || locOrgMerge) && e.start <= prev.end + 3) {
+        const between = text.slice(prev.end, e.start);
+        if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
+          prev.end = e.end;
+          prev.word = text.slice(prev.start, e.end);
+          prev.score = Math.min(prev.score, e.score);
+          prev.normKey = prev.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
+        } else { merged.push({ ...e }); }
+      } else { merged.push({ ...e }); }
     }
-    const prev = merged[merged.length - 1];
-    const isSameGroup = prev.entity_group === e.entity_group;
-    // Разрешаем склейку, если типы совпадают или оба относятся к локациям/организациям
-    const locOrgMerge = (['LOC','GPE','MISC','ORG'].includes(prev.entity_group) && 
-                         ['LOC','GPE','MISC','ORG'].includes(e.entity_group));
-    
-    if ((isSameGroup || locOrgMerge) && e.start <= prev.end + 3) {
-      const between = text.slice(prev.end, e.start);
-      if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
-        prev.end = e.end;
-        prev.word = text.slice(prev.start, e.end);
-        prev.score = Math.min(prev.score, e.score);
-        prev.normKey = prev.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
+    return merged;
+  }
+
+  function deduplicateEntities(entities) {
+    entities.sort((a, b) => a.start - b.start);
+    const unique = [];
+    for (const e of entities) {
+      if (unique.length === 0 || e.start >= unique[unique.length - 1].end) {
+        unique.push({ ...e });
       } else {
-        merged.push({ ...e });
-      }
-    } else {
-      merged.push({ ...e });
-    }
-  }
-  return merged;
-}
-
-// ✅ 3. Дедупликация с учётом перекрытий
-function deduplicateEntities(entities) {
-  entities.sort((a, b) => a.start - b.start);
-  const unique = [];
-  for (const e of entities) {
-    if (unique.length === 0 || e.start >= unique[unique.length - 1].end) {
-      unique.push({ ...e });
-    } else {
-      const prev = unique[unique.length - 1];
-      // Оставляем более длинную или уверенную сущность
-      if ((e.end - e.start) > (prev.end - prev.start) || e.score > prev.score) {
-        unique[unique.length - 1] = { ...e };
-      }
-    }
-  }
-  return unique;
-}
-
-// ✅ 4. Сквозная нумерация с нормализацией ключей
-// 1. Вспомогательная функция: расстояние Левенштейна
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  if (!m) return n; if (!n) return m;
-  const dp = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] 
-        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-    }
-  }
-  return dp[m][n];
-}
-
-// 2. Обновлённая нумерация с нечётким поиском для ФИО
-function buildEntityNumbering(entities) {
-  const groups = {}; // { type: { map: Map, nextId: 1 } }
-  const numbers = [];
-
-  for (const e of entities) {
-    const type = e.entity_group;
-    if (!groups[type]) groups[type] = { map: new Map(), nextId: 1 };
-
-    // Нормализация: нижний регистр, убираем пунктуацию, схлопываем пробелы
-    const clean = (e.word || '')
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s]/gu, '')
-      .trim()
-      .replace(/\s+/g, ' ');
-      
-    if (!clean) { numbers.push(1); continue; }
-
-    let id = groups[type].map.get(clean); // Точное совпадение
-
-    // Если точного нет, ищем похожее (ТОЛЬКО для ФИО/PER)
-    if (!id && (type === 'PER' || type === 'ФИО' || type === 'SINGLE_NAME')) {
-      const threshold = Math.max(2, Math.floor(clean.length * 0.3)); // Допуск ~30% разницы
-      
-      for (const [key, existingId] of groups[type].map) {
-        // 1. Одна строка вложена в другую (Иванов vs Иванов Иван)
-        if (key.includes(clean) || clean.includes(key)) {
-          id = existingId;
-          groups[type].map.set(clean, id); // запоминаем как алиас
-          break;
-        }
-        // 2. Нечёткое сравнение по Левенштейну (Иванов vs Иванову vs Ивановым)
-        if (levenshtein(clean, key) <= threshold) {
-          id = existingId;
-          groups[type].map.set(clean, id);
-          break;
+        const prev = unique[unique.length - 1];
+        if ((e.end - e.start) > (prev.end - prev.start) || e.score > prev.score) {
+          unique[unique.length - 1] = { ...e };
         }
       }
     }
-
-    // Если не нашли похожее, создаём новый ID
-    if (!id) {
-      id = groups[type].nextId++;
-      groups[type].map.set(clean, id);
-    }
-    
-    numbers.push(id);
+    return unique;
   }
-  return { groups, numbers };
-}
-}
 
+  function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    if (!m) return n; if (!n) return m;
+    const dp = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+      }
+    }
+    return dp[m][n];
+  }
+
+  function buildEntityNumbering(entities) {
+    const groups = {};
+    const numbers = [];
+    for (const e of entities) {
+      const type = e.entity_group;
+      if (!groups[type]) groups[type] = { map: new Map(), nextId: 1 };
+      const clean = (e.word || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').trim().replace(/\s+/g, ' ');
+      if (!clean) { numbers.push(1); continue; }
+      let id = groups[type].map.get(clean);
+      if (!id && (type === 'PER' || type === 'ФИО' || type === 'SINGLE_NAME')) {
+        const threshold = Math.max(2, Math.floor(clean.length * 0.3));
+        for (const [key, existingId] of groups[type].map) {
+          if (key.includes(clean) || clean.includes(key) || levenshtein(clean, key) <= threshold) {
+            id = existingId;
+            groups[type].map.set(clean, id);
+            break;
+          }
+        }
+      }
+      if (!id) { id = groups[type].nextId++; groups[type].map.set(clean, id); }
+      numbers.push(id);
+    }
+    return { groups, numbers };
+  }
+
+  // ✅ ОБНОВЛЁННАЯ ФУНКЦИЯ ОТРИСОВКИ ЧЕКБОКСОВ
   function renderTypeSettings() {
+    const selectedModel = modelSelect.value;
+    const modelEntities = modelConfigs[selectedModel].entities;
+    
     let html = '';
-    for (const [type, cfg] of Object.entries(entityConfig)) {
-      html += `
-      <div class="setting">
-        <label>
-          <input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}>
-          ${cfg.label} (${type})
-        </label>
-      </div>`;
+    // Сначала сущности модели
+    for (const [type, cfg] of Object.entries(modelEntities)) {
+      if (entityConfig[type]) {
+        html += `<div class="setting"><label><input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}> ${cfg.label} (${type})</label></div>`;
+      }
+    }
+    // Затем regex-типы (всегда доступны)
+    const regexTypes = ['PASSPORT','DATE_ISSUE','SNILS','INN','OGRN','PHONE','EMAIL'];
+    for (const type of regexTypes) {
+      if (entityConfig[type] && !modelEntities[type]) {
+        html += `<div class="setting"><label><input type="checkbox" class="type-check" data-type="${type}" ${entityConfig[type].enabled ? 'checked' : ''}> ${entityConfig[type].label} (${type}) 🔍</label></div>`;
+      }
     }
     typeSettings.innerHTML = html;
     document.querySelectorAll('.type-check').forEach(cb => {
-      cb.addEventListener('change', (e) => {
-        entityConfig[e.target.dataset.type].enabled = e.target.checked;
-      });
+      cb.removeEventListener('change', handleTypeChange);
+      cb.addEventListener('change', handleTypeChange);
     });
   }
 
-  // ✅ ПОБАТЧЕВАЯ ОБРАБОТКА ТЕКСТА С ПЕРЕКРЫТИЕМ
+  function handleTypeChange(e) {
+    const type = e.target.dataset.type;
+    if (entityConfig[type]) entityConfig[type].enabled = e.target.checked;
+    const selectedModel = modelSelect.value;
+    if (modelConfigs[selectedModel].entities[type]) {
+      modelConfigs[selectedModel].entities[type].enabled = e.target.checked;
+    }
+  }
+
   async function processTextWithChunks(text, threshold) {
-    const CHUNK_SIZE = 350; // символов (~250-300 токенов BERT)
-    const OVERLAP = 40;     // перекрытие, чтобы не резать слова на границах
+    const CHUNK_SIZE = 350, OVERLAP = 40;
     const allRaw = [];
-    
     for (let i = 0; i < text.length; i += CHUNK_SIZE - OVERLAP) {
       const chunk = text.slice(i, i + CHUNK_SIZE);
       if (!chunk.trim()) continue;
-
-      // group_entities: true помогает модели склеивать B-I-O теги внутри чанка
       const rawTokens = await nerPipeline(chunk, { group_entities: true });
       const located = locateTokens(rawTokens, chunk);
-      
       for (const t of located) {
         if (t.score >= threshold) {
-          // Смещаем координаты обратно в полный текст
-          allRaw.push({
-            ...t,
-            start: t.start + i,
-            end: t.end + i
-          });
+          allRaw.push({ ...t, start: t.start + i, end: t.end + i });
         }
       }
-      
-      // Обновляем прогресс обработки текста
       const pct = Math.min(100, Math.round(((i + chunk.length) / text.length) * 100));
       textProgressBar.style.width = `${pct}%`;
-      
-      // Даём браузеру обновить UI
       await new Promise(r => setTimeout(r, 0));
     }
     return allRaw;
@@ -503,8 +458,8 @@ function buildEntityNumbering(entities) {
     modelProgressBar.style.width = '10%';
 
     try {
-      const MODEL_ID = 'onnx-community/bert-base-NER-Russian-ONNX';
-      nerPipeline = await pipeline('ner', MODEL_ID, {
+      const selectedModel = modelSelect.value;
+      nerPipeline = await pipeline('ner', selectedModel, {
         progress_callback: (e) => {
           if (e.status === 'download' || e.status === 'progress') {
             if (e.total && e.loaded) {
@@ -529,7 +484,6 @@ function buildEntityNumbering(entities) {
       loadBtn.style.background = '#10b981';
       textarea.disabled = false;
       runBtn.disabled = false;
-      renderTypeSettings();
     } catch (err) {
       console.error(err);
       modelProgressBar.className = 'progress-bar error';
@@ -555,54 +509,36 @@ function buildEntityNumbering(entities) {
 
     try {
       const threshold = parseFloat(nerThreshold.value);
-
-      // 1. NER с чанкингом
       const rawTokens = await processTextWithChunks(text, threshold);
       lastDebug += `🔍 NER-токены сырые (${rawTokens.length}):\n${JSON.stringify(rawTokens.slice(0,10), null, 2)}...\n\n`;
 
-      // 2. Маппинг типов + фильтрация мусора
-      let nerEntities = rawTokens
-        .map(t => {
-          const label = t.entity.split('-').slice(1).join('-');
-          return {
-            start: t.start,
-            end: t.end,
-            word: text.slice(t.start, t.end),
-            entity_group: bioToGroup[label] || label || 'MISC',
-            score: t.score
-          };
-        })
-        .filter(e => !isSingleCharJunk(e));
+      let nerEntities = rawTokens.map(t => {
+        const label = t.entity.split('-').slice(1).join('-');
+        return {
+          start: t.start, end: t.end, word: text.slice(t.start, t.end),
+          entity_group: bioToGroup[label] || label || 'MISC', score: t.score
+        };
+      }).filter(e => !isSingleCharJunk(e));
 
-      // 3. ✅ Склейка смежных сущностей ЛЮБОГО типа
       const nerMerged = mergeAdjacentEntities(nerEntities, text);
       lastDebug += `🧩 NER после склейки (${nerMerged.length}):\n${JSON.stringify(nerMerged, null, 2)}\n\n`;
 
-      // 4. Regex
       const regexEntities = findRegexEntities(text, 0);
-      const singleNames = entityConfig.SINGLE_NAME.enabled ? findSingleNames(text) : [];
+      const singleNames = entityConfig.SINGLE_NAME?.enabled ? findSingleNames(text) : [];
       lastDebug += `🔎 Regex (${regexEntities.length}), Резервные имена (${singleNames.length})\n`;
 
-      // 5. Объединение всех источников
-      let all = [...nerMerged, ...regexEntities, ...singleNames]
-        .filter(e => entityConfig[e.entity_group]?.enabled);
-
-      // Очистка, склейка и дедупликация
+      let all = [...nerMerged, ...regexEntities, ...singleNames].filter(e => entityConfig[e.entity_group]?.enabled);
       let cleaned = cleanEntities(all, text);
       let merged = mergeAdjacentEntities(cleaned, text);
       let final = deduplicateEntities(merged);
-
-      // Нумерация
       const { numbers } = buildEntityNumbering(final);
       
-      // Отладочный вывод
       lastDebug += `✅ Итоговые сущности (${final.length}):\n`;
       final.forEach((e, i) => {
         const cfgLabel = entityConfig[e.entity_group]?.label || e.entity_group;
         lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${numbers[i]} (${e.score.toFixed(3)})\n`;
       });
 
-      // 6. Замена в тексте (с конца, чтобы индексы не съехали)
       let result = text;
       for (let i = final.length - 1; i >= 0; i--) {
         const e = final[i];
@@ -629,9 +565,11 @@ function buildEntityNumbering(entities) {
     }
   });
 
+  // Обработчики
   nerThreshold.addEventListener('input', () => {
     thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
   });
+  
   debugToggle.addEventListener('click', () => {
     if (lastDebug) {
       debugPanel.textContent = lastDebug;
@@ -642,8 +580,40 @@ function buildEntityNumbering(entities) {
     }
   });
 
-  renderTypeSettings();
-  thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
+  // 🔀 Обработчик выбора модели
+  modelSelect.addEventListener('change', (e) => {
+    const cfg = modelConfigs[e.target.value];
+    modelInfo.innerHTML = `<strong>${cfg.name}</strong> • Размер: ${cfg.size} • Сущности: ${Object.keys(cfg.entities).join(', ')}`;
+    renderTypeSettings();
+    localStorage.setItem('anon_model_selected', e.target.value);
+    // Сбрасываем состояние загрузки при смене модели
+    if (modelLoaded) {
+      modelLoaded = false;
+      loadBtn.disabled = false;
+      loadBtn.textContent = '🔄 Загрузить модель';
+      loadBtn.style.background = '';
+      runBtn.disabled = true;
+      textarea.disabled = true;
+      status.textContent = '🔄 Модель изменена — загрузите заново';
+      modelProgressBar.className = 'progress-bar';
+      modelProgressBar.style.width = '0%';
+    }
+  });
+
+  // Инициализация
+  function init() {
+    // Восстанавливаем выбор модели из localStorage
+    const saved = localStorage.getItem('anon_model_selected');
+    if (saved && modelConfigs[saved]) {
+      modelSelect.value = saved;
+    }
+    // Обновляем UI
+    const cfg = modelConfigs[modelSelect.value];
+    modelInfo.innerHTML = `<strong>${cfg.name}</strong> • Размер: ${cfg.size} • Сущности: ${Object.keys(cfg.entities).join(', ')}`;
+    renderTypeSettings();
+    thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
+  }
+  init();
 </script>
 </body>
 </html>
