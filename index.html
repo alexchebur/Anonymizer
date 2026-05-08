@@ -215,14 +215,25 @@
 
   // --- Валидация (оставляем без изменений) ---
   function isValidINN(inn) {
-    if (!/^\d{12}$/.test(inn)) return false;
-    const d = inn.split('').map(Number);
-    const c1 = [7,2,4,10,3,5,9,4,6,8];
-    const c2 = [3,7,2,4,10,3,5,9,4,6,8];
-    let s1=0, s2=0;
-    for (let i=0; i<10; i++) s1 += c1[i]*d[i];
-    for (let i=0; i<11; i++) s2 += c2[i]*d[i];
-    return d[10]===(s1%11)%10 && d[11]===(s2%11)%10;
+    const clean = inn.replace(/\D/g, '');
+    if (clean.length !== 10 && clean.length !== 12) return false;
+    const d = clean.split('').map(Number);
+
+    if (clean.length === 10) {
+      // Контрольное число для 10-значного ИНН
+      const weights = [2, 4, 10, 3, 5, 9, 4, 6, 8];
+      let sum = 0;
+      for (let i = 0; i < 9; i++) sum += weights[i] * d[i];
+      return d[9] === (sum % 11) % 10;
+    } else {
+      // Контрольные числа для 12-значного ИНН
+      const w1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
+      const w2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
+      let s1 = 0, s2 = 0;
+      for (let i = 0; i < 10; i++) s1 += w1[i] * d[i];
+      for (let i = 0; i < 11; i++) s2 += w2[i] * d[i];
+      return d[10] === (s1 % 11) % 10 && d[11] === (s2 % 11) % 10;
+    }
   }
   function isValidSNILS(snils) {
     const digits = snils.replace(/[\s-]/g, '');
