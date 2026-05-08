@@ -155,12 +155,11 @@
 
   env.allowLocalModels = false;
   env.useBrowserCache = true;
-
   // --- КОНФИГУРАЦИЯ МОДЕЛЕЙ ---
   const modelConfigs = {
     'onnx-community/bert-base-NER-Russian-ONNX': {
-      name: 'bert-base-NER-Russian',
-      size: '~170 МБ',
+      name: 'bert-base-NER-Russian (INT8)',
+      size: '~178 МБ', // Обновлённый размер для квантованной версии
       entities: {
         PER:        { label: 'ФИО',             enabled: true },
         SINGLE_NAME:{ label: 'ФИО?',            enabled: false },
@@ -170,6 +169,7 @@
         GPE:        { label: 'ЛОКАЦИЯ',         enabled: true },
         MISC:       { label: 'ДРУГОЕ',          enabled: false },
         PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
+        BANK_ACCOUNT: { label: 'р/с',           enabled: true }, // 👈 Добавлено
         DATE_ISSUE: { label: 'ДАТА',            enabled: true },
         SNILS:      { label: 'СНИЛС',           enabled: true },
         INN:        { label: 'ИНН',             enabled: true },
@@ -187,6 +187,7 @@
         LOC:        { label: 'МЕСТО',           enabled: true },
         GEOPOLIT:   { label: 'РЕГИОН/СТРАНА',   enabled: true },
         MEDIA:      { label: 'СМИ',             enabled: true }
+        // Regex-типы (ИНН, р/с и др.) будут добавлены автоматически через renderTypeSettings
       }
     }
   };
@@ -213,20 +214,20 @@
   let modelLoaded = false;
   let lastDebug = '';
 
-  // --- Валидация (оставляем без изменений) ---
+  // --- Валидация (обновлённая поддержка 10 и 12 знаков) ---
   function isValidINN(inn) {
     const clean = inn.replace(/\D/g, '');
     if (clean.length !== 10 && clean.length !== 12) return false;
     const d = clean.split('').map(Number);
 
     if (clean.length === 10) {
-      // Контрольное число для 10-значного ИНН
+      // Контрольное число для 10-значного ИНН (физлица)
       const weights = [2, 4, 10, 3, 5, 9, 4, 6, 8];
       let sum = 0;
       for (let i = 0; i < 9; i++) sum += weights[i] * d[i];
       return d[9] === (sum % 11) % 10;
     } else {
-      // Контрольные числа для 12-значного ИНН
+      // Контрольные числа для 12-значного ИНН (юрлица)
       const w1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
       const w2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
       let s1 = 0, s2 = 0;
@@ -235,6 +236,7 @@
       return d[10] === (s1 % 11) % 10 && d[11] === (s2 % 11) % 10;
     }
   }
+
   function isValidSNILS(snils) {
     const digits = snils.replace(/[\s-]/g, '');
     if (!/^\d{11}$/.test(digits)) return false;
@@ -245,6 +247,7 @@
     if (control === 100 || control === 101) control = 0;
     return control === parseInt(digits.slice(9,11), 10);
   }
+
   function isValidOGRN(ogrn) {
     const clean = ogrn.replace(/\D/g, '');
     if (clean.length !== 13 && clean.length !== 15) return false;
@@ -255,19 +258,41 @@
     return check === (remainder === 10 ? 0 : remainder);
   }
 
-  // --- Regex-сущности (без изменений) ---
+  // --- Regex-сущности (исправленные паттерны) ---
   function findRegexEntities(text, baseOffset = 0) {
     const results = [];
     const patterns = [
+      // 🛂 ПАСПОРТ
       { regex: /(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?(?:\d{2}\s*[\-–—]?\s*\d{2}|\d{4})\s*(?:№|номер|N\.?)?\s*\d{6}/giu, type: 'PASSPORT', validate: null },
-      { regex: /\b(?:ООО|ПАО|АО|ЗАО|ОАО|ИП|ФГУП|МУП|НКО|Фонд|Группа|Холдинг)\s*[«"]?[^»"\n]{2,100}[»"]?/giu, type: 'ORG', validate: null },
-      { regex: /[«"][^»"\n]{3,60}[»"]/g, type: 'TITLE', validate: null },
+      
+      // 📱 ТЕЛЕФОН (строгий: требует +7/8 и разделители/скобки)
+      { regex: /(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}\b/g, type: 'PHONE', validate: null },
+      
+      // 🆔 ИНН (10 или 12 цифр) — порядок важен! Сначала более короткие/специфичные
+      { regex: /\b\d{10}\b/g, type: 'INN', validate: isValidINN },
+      { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
+      
+      // 🏢 ОГРН (13 или 15 цифр)
+      { regex: /\b\d{13}\b/g, type: 'OGRN', validate: isValidOGRN },
+      { regex: /\b\d{15}\b/g, type: 'OGRN', validate: isValidOGRN },
+      
+      // 🏦 р/с (ровно 20 цифр)
+      { regex: /\b\d{20}\b/g, type: 'BANK_ACCOUNT', validate: null },
+      
+      // 🆔 СНИЛС (11 цифр с возможными разделителями)
+      { regex: /\b\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
+      
+      // 📅 ДАТЫ
       { regex: /\b(?:дата\s*(?:выдачи|регистрации)|выдан)\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/giu, type: 'DATE_ISSUE', validate: null },
       { regex: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, type: 'DATE_ISSUE', validate: null },
-      { regex: /\b\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
-      { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
-      { regex: /\b\d{13}(?:\d{2})?\b/g, type: 'OGRN', validate: isValidOGRN },
-      { regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g, type: 'PHONE', validate: null },
+      
+      // 🏢 ОРГАНИЗАЦИИ (юр.форма + название)
+      { regex: /\b(?:ООО|ПАО|АО|ЗАО|ОАО|ИП|ФГУП|МУП|НКО|Фонд|Группа|Холдинг)\s*[«"]?[^»"\n]{2,100}[»"]?/giu, type: 'ORG', validate: null },
+      
+      // 📝 НАЗВАНИЯ В КАВЫЧКАХ
+      { regex: /[«"][^»"\n]{3,60}[»"]/g, type: 'TITLE', validate: null },
+      
+      // 📧 EMAIL
       { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null }
     ];
     for (const { regex, type, validate } of patterns) {
