@@ -130,8 +130,8 @@
 
   <div class="slider-container">
     <label for="nerThreshold">Порог уверенности NER:</label>
-    <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.95">
-    <span id="thresholdValue">0.95</span>
+    <input type="range" id="nerThreshold" min="0" max="1" step="0.05" value="0.70">
+    <span id="thresholdValue">0.70</span>
   </div>
 
   <textarea id="inputText" disabled placeholder="Введите текст...">Доверенность 
@@ -155,11 +155,13 @@
 
   env.allowLocalModels = false;
   env.useBrowserCache = true;
+
   // --- КОНФИГУРАЦИЯ МОДЕЛЕЙ ---
   const modelConfigs = {
     'onnx-community/bert-base-NER-Russian-ONNX': {
       name: 'bert-base-NER-Russian (INT8)',
-      size: '~178 МБ', // Обновлённый размер для квантованной версии
+      size: '~178 МБ',
+      defaultThreshold: 0.70,
       entities: {
         PER:        { label: 'ФИО',             enabled: true },
         SINGLE_NAME:{ label: 'ФИО?',            enabled: false },
@@ -167,33 +169,36 @@
         TITLE:      { label: 'НАЗВАНИЕ',        enabled: true },
         LOC:        { label: 'МЕСТО',           enabled: true },
         GPE:        { label: 'ЛОКАЦИЯ',         enabled: true },
-        MISC:       { label: 'ДРУГОЕ',          enabled: false },
-        PASSPORT:   { label: 'ПАСПОРТ',         enabled: true },
-        BANK_ACCOUNT: { label: 'р/с',           enabled: true }, // 👈 Добавлено
-        DATE_ISSUE: { label: 'ДАТА',            enabled: true },
-        SNILS:      { label: 'СНИЛС',           enabled: true },
-        INN:        { label: 'ИНН',             enabled: true },
-        OGRN:       { label: 'ОГРН',            enabled: true },
-        PHONE:      { label: 'ТЕЛЕФОН',         enabled: true },
-        EMAIL:      { label: 'EMAIL',           enabled: true }
+        MISC:       { label: 'ДРУГОЕ',          enabled: false }
       }
     },
     'alexchebur/ner-rubert-tiny-news-onnx': {
       name: 'ner-rubert-tiny-news (ONNX)',
       size: '~28 МБ',
+      defaultThreshold: 0.50,
       entities: {
         PER:        { label: 'ФИО',             enabled: true },
         ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
         LOC:        { label: 'МЕСТО',           enabled: true },
         GEOPOLIT:   { label: 'РЕГИОН/СТРАНА',   enabled: true },
         MEDIA:      { label: 'СМИ',             enabled: true }
-        // Regex-типы (ИНН, р/с и др.) будут добавлены автоматически через renderTypeSettings
       }
     }
   };
 
-  // Глобальный конфиг сущностей (для совместимости с остальным кодом)
-  const entityConfig = { ...modelConfigs['onnx-community/bert-base-NER-Russian-ONNX'].entities };
+  // --- ЕДИНЫЙ КОНФИГ СУЩНОСТЕЙ (включая Regex-типы) ---
+  const entityConfig = {
+    // NER-типы (заполняются при выборе модели)
+    // Regex-типы (всегда доступны)
+    PASSPORT:     { label: 'ПАСПОРТ',         enabled: true },
+    BANK_ACCOUNT: { label: 'р/с',             enabled: true },
+    DATE_ISSUE:   { label: 'ДАТА',            enabled: true },
+    SNILS:        { label: 'СНИЛС',           enabled: true },
+    INN:          { label: 'ИНН',             enabled: true },
+    OGRN:         { label: 'ОГРН',            enabled: true },
+    PHONE:        { label: 'ТЕЛЕФОН',         enabled: true },
+    EMAIL:        { label: 'EMAIL',           enabled: true }
+  };
 
   // DOM-элементы
   const loadBtn = document.getElementById('loadBtn');
@@ -214,20 +219,17 @@
   let modelLoaded = false;
   let lastDebug = '';
 
-  // --- Валидация (обновлённая поддержка 10 и 12 знаков) ---
+  // --- Валидация ---
   function isValidINN(inn) {
     const clean = inn.replace(/\D/g, '');
     if (clean.length !== 10 && clean.length !== 12) return false;
     const d = clean.split('').map(Number);
-
     if (clean.length === 10) {
-      // Контрольное число для 10-значного ИНН (физлица)
       const weights = [2, 4, 10, 3, 5, 9, 4, 6, 8];
       let sum = 0;
       for (let i = 0; i < 9; i++) sum += weights[i] * d[i];
       return d[9] === (sum % 11) % 10;
     } else {
-      // Контрольные числа для 12-значного ИНН (юрлица)
       const w1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
       const w2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
       let s1 = 0, s2 = 0;
@@ -258,41 +260,22 @@
     return check === (remainder === 10 ? 0 : remainder);
   }
 
-  // --- Regex-сущности (исправленные паттерны) ---
+  // --- Regex-сущности ---
   function findRegexEntities(text, baseOffset = 0) {
     const results = [];
     const patterns = [
-      // 🛂 ПАСПОРТ
       { regex: /(?:паспорт|серия|сер\.)\s*(?:серии?\s*)?(?:\d{2}\s*[\-–—]?\s*\d{2}|\d{4})\s*(?:№|номер|N\.?)?\s*\d{6}/giu, type: 'PASSPORT', validate: null },
-      
-      // 📱 ТЕЛЕФОН (строгий: требует +7/8 и разделители/скобки)
       { regex: /(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}\b/g, type: 'PHONE', validate: null },
-      
-      // 🆔 ИНН (10 или 12 цифр) — порядок важен! Сначала более короткие/специфичные
       { regex: /\b\d{10}\b/g, type: 'INN', validate: isValidINN },
       { regex: /\b\d{12}\b/g, type: 'INN', validate: isValidINN },
-      
-      // 🏢 ОГРН (13 или 15 цифр)
       { regex: /\b\d{13}\b/g, type: 'OGRN', validate: isValidOGRN },
       { regex: /\b\d{15}\b/g, type: 'OGRN', validate: isValidOGRN },
-      
-      // 🏦 р/с (ровно 20 цифр)
       { regex: /\b\d{20}\b/g, type: 'BANK_ACCOUNT', validate: null },
-      
-      // 🆔 СНИЛС (11 цифр с возможными разделителями)
       { regex: /\b\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{3}\s*[-\s]?\s*\d{2}\b/g, type: 'SNILS', validate: isValidSNILS },
-      
-      // 📅 ДАТЫ
       { regex: /\b(?:дата\s*(?:выдачи|регистрации)|выдан)\s*\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/giu, type: 'DATE_ISSUE', validate: null },
       { regex: /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, type: 'DATE_ISSUE', validate: null },
-      
-      // 🏢 ОРГАНИЗАЦИИ (юр.форма + название)
       { regex: /\b(?:ООО|ПАО|АО|ЗАО|ОАО|ИП|ФГУП|МУП|НКО|Фонд|Группа|Холдинг)\s*[«"]?[^»"\n]{2,100}[»"]?/giu, type: 'ORG', validate: null },
-      
-      // 📝 НАЗВАНИЯ В КАВЫЧКАХ
       { regex: /[«"][^»"\n]{3,60}[»"]/g, type: 'TITLE', validate: null },
-      
-      // 📧 EMAIL
       { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, type: 'EMAIL', validate: null }
     ];
     for (const { regex, type, validate } of patterns) {
@@ -364,23 +347,16 @@
       }
       const prev = merged[merged.length - 1];
       const isSameGroup = prev.entity_group === e.entity_group;
-      // Разрешаем склейку, если типы совпадают или оба относятся к локациям/организациям
       const locOrgMerge = (['LOC','GPE','MISC','ORG'].includes(prev.entity_group) && 
                            ['LOC','GPE','MISC','ORG'].includes(e.entity_group));
       
       if ((isSameGroup || locOrgMerge) && e.start <= prev.end + 3) {
         const between = text.slice(prev.end, e.start);
-        
-        // 🛡️ ЗАЩИТА ОТ АРТЕФАКТОВ ТОКЕНИЗАЦИИ (Ваш запрос)
         const mergedWord = text.slice(prev.start, e.end).trim().toLowerCase();
-        // Если слово длинное (>20 символов), не содержит пробелов и заглавных букв — это мусор из субтокенов
         if (mergedWord.length > 20 && !/\s/.test(mergedWord) && !/[А-ЯЁ]{2,}/.test(mergedWord)) {
-          // Не склеиваем, начинаем новую сущность
           merged.push({ ...e });
           continue;
         }
-
-        // Стандартная проверка на разделители
         if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
           prev.end = e.end;
           prev.word = text.slice(prev.start, e.end);
@@ -412,6 +388,18 @@
     return unique;
   }
 
+  // ✅ Расширение границ до разделителей (убирает артефакты . , ; )
+  function expandBoundaries(entities, text) {
+    return entities.map(e => {
+      let start = e.start, end = e.end;
+      // Расширяем влево до пробела/разделителя
+      while (start > 0 && !/[\s,;:()\"\'«»\.\-]/.test(text[start - 1])) start--;
+      // Расширяем вправо до пробела/разделителя
+      while (end < text.length && !/[\s,;:()\"\'«»\.\-]/.test(text[end])) end++;
+      return { ...e, start, end, word: text.slice(start, end) };
+    });
+  }
+
   function levenshtein(a, b) {
     const m = a.length, n = b.length;
     if (!m) return n; if (!n) return m;
@@ -435,6 +423,7 @@
       const clean = (e.word || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').trim().replace(/\s+/g, ' ');
       if (!clean) { numbers.push(1); continue; }
       let id = groups[type].map.get(clean);
+      // Нечёткое сравнение ТОЛЬКО для ФИО
       if (!id && (type === 'PER' || type === 'ФИО' || type === 'SINGLE_NAME')) {
         const threshold = Math.max(2, Math.floor(clean.length * 0.3));
         for (const [key, existingId] of groups[type].map) {
@@ -451,7 +440,6 @@
     return { groups, numbers };
   }
 
-  // ✅ ОБНОВЛЁННАЯ ФУНКЦИЯ ОТРИСОВКИ ЧЕКБОКСОВ
   function renderTypeSettings() {
     const selectedModel = modelSelect.value;
     const modelEntities = modelConfigs[selectedModel].entities;
@@ -459,14 +447,13 @@
     let html = '';
     // Сначала сущности модели
     for (const [type, cfg] of Object.entries(modelEntities)) {
-      if (entityConfig[type]) {
-        html += `<div class="setting"><label><input type="checkbox" class="type-check" data-type="${type}" ${cfg.enabled ? 'checked' : ''}> ${cfg.label} (${type})</label></div>`;
-      }
+      if (!entityConfig[type]) entityConfig[type] = { ...cfg };
+      html += `<div class="setting"><label><input type="checkbox" class="type-check" data-type="${type}" ${entityConfig[type].enabled ? 'checked' : ''}> ${entityConfig[type].label} (${type})</label></div>`;
     }
-    // Затем regex-типы (всегда доступны)
-    const regexTypes = ['PASSPORT','DATE_ISSUE','SNILS','INN','OGRN','PHONE','EMAIL'];
+    // Затем regex-типы
+    const regexTypes = ['PASSPORT','DATE_ISSUE','SNILS','INN','OGRN','PHONE','EMAIL','BANK_ACCOUNT'];
     for (const type of regexTypes) {
-      if (entityConfig[type] && !modelEntities[type]) {
+      if (entityConfig[type]) {
         html += `<div class="setting"><label><input type="checkbox" class="type-check" data-type="${type}" ${entityConfig[type].enabled ? 'checked' : ''}> ${entityConfig[type].label} (${type}) 🔍</label></div>`;
       }
     }
@@ -480,10 +467,6 @@
   function handleTypeChange(e) {
     const type = e.target.dataset.type;
     if (entityConfig[type]) entityConfig[type].enabled = e.target.checked;
-    const selectedModel = modelSelect.value;
-    if (modelConfigs[selectedModel].entities[type]) {
-      modelConfigs[selectedModel].entities[type].enabled = e.target.checked;
-    }
   }
 
   async function processTextWithChunks(text, threshold) {
@@ -584,10 +567,16 @@
       const singleNames = entityConfig.SINGLE_NAME?.enabled ? findSingleNames(text) : [];
       lastDebug += `🔎 Regex (${regexEntities.length}), Резервные имена (${singleNames.length})\n`;
 
-      let all = [...nerMerged, ...regexEntities, ...singleNames].filter(e => entityConfig[e.entity_group]?.enabled);
+      // ✅ ФИЛЬТРАЦИЯ ПО entityConfig (включая Regex-типы!)
+      let all = [...nerMerged, ...regexEntities, ...singleNames]
+        .filter(e => entityConfig[e.entity_group]?.enabled);
+
       let cleaned = cleanEntities(all, text);
       let merged = mergeAdjacentEntities(cleaned, text);
-      let final = deduplicateEntities(merged);
+      let deduped = deduplicateEntities(merged);
+      // ✅ Расширение границ перед заменой
+      let final = expandBoundaries(deduped, text);
+      
       const { numbers } = buildEntityNumbering(final);
       
       lastDebug += `✅ Итоговые сущности (${final.length}):\n`;
@@ -596,6 +585,7 @@
         lastDebug += `  [${e.start}-${e.end}] ${text.slice(e.start, e.end)} → ${cfgLabel}-${numbers[i]} (${e.score.toFixed(3)})\n`;
       });
 
+      // Замена с конца, чтобы индексы не съехали
       let result = text;
       for (let i = final.length - 1; i >= 0; i--) {
         const e = final[i];
@@ -640,10 +630,16 @@
   // 🔀 Обработчик выбора модели
   modelSelect.addEventListener('change', (e) => {
     const cfg = modelConfigs[e.target.value];
-    modelInfo.innerHTML = `<strong>${cfg.name}</strong> • Размер: ${cfg.size} • Сущности: ${Object.keys(cfg.entities).join(', ')}`;
+    modelInfo.innerHTML = `<strong>${cfg.name}</strong> • Размер: ${cfg.size} • Порог по умолчанию: ${cfg.defaultThreshold}`;
+    
+    // ✅ Авто-обновление порога при смене модели
+    nerThreshold.value = cfg.defaultThreshold;
+    thresholdValue.textContent = cfg.defaultThreshold.toFixed(2);
+    
     renderTypeSettings();
     localStorage.setItem('anon_model_selected', e.target.value);
-    // Сбрасываем состояние загрузки при смене модели
+    
+    // Сброс состояния при смене модели
     if (modelLoaded) {
       modelLoaded = false;
       loadBtn.disabled = false;
@@ -659,16 +655,18 @@
 
   // Инициализация
   function init() {
-    // Восстанавливаем выбор модели из localStorage
     const saved = localStorage.getItem('anon_model_selected');
     if (saved && modelConfigs[saved]) {
       modelSelect.value = saved;
     }
-    // Обновляем UI
     const cfg = modelConfigs[modelSelect.value];
-    modelInfo.innerHTML = `<strong>${cfg.name}</strong> • Размер: ${cfg.size} • Сущности: ${Object.keys(cfg.entities).join(', ')}`;
+    modelInfo.innerHTML = `<strong>${cfg.name}</strong> • Размер: ${cfg.size} • Порог по умолчанию: ${cfg.defaultThreshold}`;
+    
+    // ✅ Установка порога при инициализации
+    nerThreshold.value = cfg.defaultThreshold;
+    thresholdValue.textContent = cfg.defaultThreshold.toFixed(2);
+    
     renderTypeSettings();
-    thresholdValue.textContent = parseFloat(nerThreshold.value).toFixed(2);
   }
   init();
 </script>
