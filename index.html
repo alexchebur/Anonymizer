@@ -175,7 +175,7 @@
     'alexchebur/ner-rubert-tiny-news-onnx': {
       name: 'ner-rubert-tiny-news (ONNX)',
       size: '~28 МБ',
-      defaultThreshold: 0.50,
+      defaultThreshold: 0.90, // ✅ Авто-порог 0.9 для малой модели
       entities: {
         PER:        { label: 'ФИО',             enabled: true },
         ORG:        { label: 'ОРГАНИЗАЦИЯ',     enabled: true },
@@ -186,10 +186,8 @@
     }
   };
 
-  // --- ЕДИНЫЙ КОНФИГ СУЩНОСТЕЙ (включая Regex-типы) ---
+  // --- ЕДИНЫЙ КОНФИГ СУЩНОСТЕЙ ---
   const entityConfig = {
-    // NER-типы (заполняются при выборе модели)
-    // Regex-типы (всегда доступны)
     PASSPORT:     { label: 'ПАСПОРТ',         enabled: true },
     BANK_ACCOUNT: { label: 'р/с',             enabled: true },
     DATE_ISSUE:   { label: 'ДАТА',            enabled: true },
@@ -199,6 +197,24 @@
     PHONE:        { label: 'ТЕЛЕФОН',         enabled: true },
     EMAIL:        { label: 'EMAIL',           enabled: true }
   };
+
+  // ✅ ЗАЩИТНЫЙ СПИСОК: термины и заголовочные слова, которые НЕЛЬЗЯ анонимизировать
+  const PROTECTED_TERMS = new Set([
+    // Юридические/технические аббревиатуры
+    'ТБР','ГЧП','ДУПТ','СИСТ','КУ','ИЛ','ОМСУ','ЦТП','МУП','АО','ООО','ПАО','ЗАО','ОАО','ИП','ФГУП','НКО',
+    // Частые заголовочные слова
+    'УПРАВЛЕНИЕ','ИМУЩЕСТВОМ','ПЕРИОД','БАНКРОТСТВА','РЕЕСТР','ТРЕБОВАНИЙ','КРЕДИТОРОВ',
+    'ИТОГОВЫЕ','ПРЕДЛОЖЕНИЯ','ДАЛЬНЕЙШАЯ','СУДЬБА','РАЗРЕЗЕ','ИНТЕРЕСОВ','ПРОДАЖА','ОЦЕНКА',
+    'ПЕРСПЕКТИВ','РИСКИ','СЦЕНАРИИ','УДОВЛЕТВОРЕНИЯ','РЕКОМЕНДАЦИЯ','КОМПЕНСАЦИЯ','АРЕНДА','ДОГОВОР',
+    'ТОРГИ','КОНЦЕССИЯ','ИНВЕСТИЦИИ',
+    // Общие слова, которые часто в начале предложений
+    'Вариант','Предложение','Результат','Показатель','Особенности','Сроки','Инвентаризация','Оценка',
+    'Утверждение','Первые','Повторные','Публичное','Если','Последствия','Оптимальная','Обоснование',
+    // Финансовые термины
+    'Убыток','Расходы','Тариф','Плата','Компенсация','Капремонт','Операционные','Финансовый','Бюджет',
+    // Гео/админ
+    'Муниципальная','Казна','Администрация','Прокурорский','Надзор','Федеральный','Закон','ФЗ'
+  ]);
 
   // DOM-элементы
   const loadBtn = document.getElementById('loadBtn');
@@ -260,6 +276,18 @@
     return check === (remainder === 10 ? 0 : remainder);
   }
 
+  // ✅ Проверка: является ли слово "заголовочным" (контекстная защита)
+  function isLikelyHeaderWord(word, text, position) {
+    // Если слово полностью в верхнем регистре и стоит после переноса строки/табуляции
+    const before = text.slice(Math.max(0, position - 20), position);
+    if (/[\n\t]\s*$/.test(before) && word === word.toUpperCase() && word.length > 3) {
+      return true;
+    }
+    // Если слово в списке защищённых
+    if (PROTECTED_TERMS.has(word.toUpperCase())) return true;
+    return false;
+  }
+
   // --- Regex-сущности ---
   function findRegexEntities(text, baseOffset = 0) {
     const results = [];
@@ -292,12 +320,14 @@
 
   function findSingleNames(text) {
     const words = [];
-    const regex = /\b([А-ЯЁ][а-яё]{1,30})\b/g;
-    const stopWords = new Set(['ООО','ЗАО','АО','ПАО','ОАО','ИП','Тел','Телефон','Email','Почта','Адрес','Город','Улица','Дом','Квартира','Паспорт','СНИЛС','ИНН','ОГРН','Яндекс','Гугл','Майл','Рамблер','России','Российской']);
+    const regex = /\b([А-ЯЁ][а-яё]{2,30})\b/g; // Мин. длина 2 символа
+    const stopWords = new Set(['ООО','ЗАО','АО','ПАО','ОАО','ИП','Тел','Телефон','Email','Почта','Адрес','Город','Улица','Дом','Квартира','Паспорт','СНИЛС','ИНН','ОГРН','Яндекс','Гугл','Майл','Рамблер','России','Российской','Федерации','Республика','Область','Край','Город','Село','Деревня','Поселок']);
     let match; regex.lastIndex = 0;
     while ((match = regex.exec(text)) !== null) {
       const word = match[0];
-      if (stopWords.has(word)) continue;
+      if (stopWords.has(word) || PROTECTED_TERMS.has(word.toUpperCase())) continue;
+      // Не брать слова, которые выглядят как заголовки
+      if (isLikelyHeaderWord(word, text, match.index)) continue;
       words.push({ start: match.index, end: match.index + word.length, word, entity_group: 'SINGLE_NAME', score: 0.5 });
     }
     return words;
@@ -311,7 +341,7 @@
       const isSubword = word.startsWith('##');
       if (isSubword) word = word.slice(2);
       let idx = text.indexOf(word, currentPos);
-      if (idx === -1) idx = text.indexOf(word, Math.max(0, currentPos - 5));
+      if (idx === -1) idx = text.indexOf(word, Math.max(0, currentPos - 10));
       if (idx === -1) continue;
       located.push({ ...t, start: idx, end: idx + word.length, word: text.slice(idx, idx + word.length) });
       currentPos = idx + word.length;
@@ -332,6 +362,11 @@
 
   function cleanEntities(entities, text) {
     return entities.filter(e => {
+      // ✅ Фильтр по защищённым терминам
+      if (PROTECTED_TERMS.has(e.word.toUpperCase().trim())) return false;
+      // ✅ Контекстная проверка заголовков
+      if (isLikelyHeaderWord(e.word, text, e.start)) return false;
+      // Базовые фильтры
       if (e.word.length < 3 && !/^\d+$/.test(e.word)) return false;
       if (/^[а-яё]{1,2}$/i.test(e.word)) return false;
       return true;
@@ -339,35 +374,33 @@
   }
 
   function mergeAdjacentEntities(entities, text) {
-    const merged = [];
-    for (const e of entities) {
-      if (merged.length === 0) {
-        merged.push({ ...e });
-        continue;
-      }
+    if (entities.length === 0) return [];
+    const merged = [ { ...entities[0] } ];
+    
+    for (let i = 1; i < entities.length; i++) {
+      const curr = entities[i];
       const prev = merged[merged.length - 1];
-      const isSameGroup = prev.entity_group === e.entity_group;
-      const locOrgMerge = (['LOC','GPE','MISC','ORG'].includes(prev.entity_group) && 
-                           ['LOC','GPE','MISC','ORG'].includes(e.entity_group));
       
-      if ((isSameGroup || locOrgMerge) && e.start <= prev.end + 3) {
-        const between = text.slice(prev.end, e.start);
-        const mergedWord = text.slice(prev.start, e.end).trim().toLowerCase();
-        if (mergedWord.length > 20 && !/\s/.test(mergedWord) && !/[А-ЯЁ]{2,}/.test(mergedWord)) {
-          merged.push({ ...e });
+      // Проверяем: одинаковый тип ИЛИ совместимые типы (ЛОК + ОРГ)
+      const sameGroup = prev.entity_group === curr.entity_group;
+      const compatibleGroups = (['LOC','GPE','ORG','MISC'].includes(prev.entity_group) && 
+                                ['LOC','GPE','ORG','MISC'].includes(curr.entity_group));
+      
+      // Расстояние между сущностями <= 2 символа (пробел, запятая)
+      const closeEnough = curr.start <= prev.end + 2;
+      
+      if ((sameGroup || compatibleGroups) && closeEnough) {
+        const between = text.slice(prev.end, curr.start);
+        // Не склеиваем, если между ними перенос строки или точка с запятой
+        if (!/[\n;:]/.test(between)) {
+          prev.end = curr.end;
+          prev.word = text.slice(prev.start, prev.end);
+          prev.score = Math.min(prev.score, curr.score);
+          prev.normKey = prev.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
           continue;
         }
-        if (!between.includes(',') && !between.includes('\n') && !between.includes(';')) {
-          prev.end = e.end;
-          prev.word = text.slice(prev.start, e.end);
-          prev.score = Math.min(prev.score, e.score);
-          prev.normKey = prev.word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
-        } else {
-          merged.push({ ...e });
-        }
-      } else {
-        merged.push({ ...e });
       }
+      merged.push({ ...curr });
     }
     return merged;
   }
@@ -380,6 +413,7 @@
         unique.push({ ...e });
       } else {
         const prev = unique[unique.length - 1];
+        // Оставляем ту, что длиннее или с большей уверенностью
         if ((e.end - e.start) > (prev.end - prev.start) || e.score > prev.score) {
           unique[unique.length - 1] = { ...e };
         }
@@ -388,14 +422,14 @@
     return unique;
   }
 
-  // ✅ Расширение границ до разделителей (убирает артефакты . , ; )
+  // ✅ Более аккуратное расширение границ (не захватывает лишнее)
   function expandBoundaries(entities, text) {
     return entities.map(e => {
       let start = e.start, end = e.end;
-      // Расширяем влево до пробела/разделителя
-      while (start > 0 && !/[\s,;:()\"\'«»\.\-]/.test(text[start - 1])) start--;
-      // Расширяем вправо до пробела/разделителя
-      while (end < text.length && !/[\s,;:()\"\'«»\.\-]/.test(text[end])) end++;
+      // Влево: только если перед словом пробел или начало текста
+      while (start > 0 && text[start - 1] === ' ') start--;
+      // Вправо: только если после слова пробел или конец текста
+      while (end < text.length && text[end] === ' ') end++;
       return { ...e, start, end, word: text.slice(start, end) };
     });
   }
@@ -571,10 +605,9 @@
       let all = [...nerMerged, ...regexEntities, ...singleNames]
         .filter(e => entityConfig[e.entity_group]?.enabled);
 
-      let cleaned = cleanEntities(all, text);
+      let cleaned = cleanEntities(all, text); // ✅ Здесь применяется whitelist + header-check
       let merged = mergeAdjacentEntities(cleaned, text);
       let deduped = deduplicateEntities(merged);
-      // ✅ Расширение границ перед заменой
       let final = expandBoundaries(deduped, text);
       
       const { numbers } = buildEntityNumbering(final);
